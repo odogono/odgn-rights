@@ -1,10 +1,14 @@
 export const Flags = {
-  READ: 1,
-  WRITE: 2,
-  DELETE: 4,
-  CREATE: 8,
   EXECUTE: 16,
-  ALL: 31,
+  READ: 1,
+  // eslint-disable-next-line perfectionist/sort-objects
+  DELETE: 4,
+  // eslint-disable-next-line perfectionist/sort-objects
+  CREATE: 8,
+
+  WRITE: 2,
+  // eslint-disable-next-line perfectionist/sort-objects
+  ALL: 31
 } as const;
 
 export type Flags = (typeof Flags)[keyof typeof Flags];
@@ -18,12 +22,18 @@ type RightInit = {
 const hasBit = (mask: number, bit: number) => (mask & bit) === bit;
 
 const normalizePath = (p: string): string => {
-  if (!p) return '/';
+  if (!p) {
+    return '/';
+  }
   let out = p.trim();
-  if (!out.startsWith('/')) out = '/' + out;
+  if (!out.startsWith('/')) {
+    out = '/' + out;
+  }
   out = out.replace(/\/+/, '/');
-  out = out.replace(/\/+/g, '/');
-  if (out.length > 1 && out.endsWith('/')) out = out.slice(0, -1);
+  out = out.replaceAll(/\/+/g, '/');
+  if (out.length > 1 && out.endsWith('/')) {
+    out = out.slice(0, -1);
+  }
   return out;
 };
 
@@ -46,13 +56,23 @@ const letterForFlag = (flag: Flags): 'r' | 'w' | 'c' | 'x' => {
 };
 
 const lettersFromMask = (mask: number): string => {
-  if (mask === Flags.ALL) return '*';
+  if (mask === Flags.ALL) {
+    return '*';
+  }
   const letters: string[] = [];
-  if (hasBit(mask, Flags.READ)) letters.push('r');
-  if (hasBit(mask, Flags.WRITE)) letters.push('w');
+  if (hasBit(mask, Flags.READ)) {
+    letters.push('r');
+  }
+  if (hasBit(mask, Flags.WRITE)) {
+    letters.push('w');
+  }
   // Collapse CREATE and DELETE as 'c'
-  if (hasBit(mask, Flags.CREATE) || hasBit(mask, Flags.DELETE)) letters.push('c');
-  if (hasBit(mask, Flags.EXECUTE)) letters.push('x');
+  if (hasBit(mask, Flags.CREATE) || hasBit(mask, Flags.DELETE)) {
+    letters.push('c');
+  }
+  if (hasBit(mask, Flags.EXECUTE)) {
+    letters.push('x');
+  }
   return letters.join('');
 };
 
@@ -65,8 +85,12 @@ export class Right {
   constructor(path: string, init?: RightInit) {
     this.path = normalizePath(path);
     this.description = init?.description;
-    if (init?.allow) init.allow.forEach((f) => this.allow(f));
-    if (init?.deny) init.deny.forEach((f) => this.deny(f));
+    if (init?.allow) {
+      init.allow.forEach(f => this.allow(f));
+    }
+    if (init?.deny) {
+      init.deny.forEach(f => this.deny(f));
+    }
   }
 
   allow(flag: Flags): this {
@@ -92,11 +116,23 @@ export class Right {
   has(flag: Flags): boolean {
     // For composite masks, require all bits
     let remaining = flag;
-    const bits: Flags[] = [Flags.READ, Flags.WRITE, Flags.DELETE, Flags.CREATE, Flags.EXECUTE];
+    const bits: Flags[] = [
+      Flags.READ,
+      Flags.WRITE,
+      Flags.DELETE,
+      Flags.CREATE,
+      Flags.EXECUTE
+    ];
     for (const bit of bits) {
-      if (!hasBit(remaining, bit)) continue;
-      if (hasBit(this.denyMask, bit)) return false;
-      if (!hasBit(this.allowMask, bit)) return false;
+      if (!hasBit(remaining, bit)) {
+        continue;
+      }
+      if (hasBit(this.denyMask, bit)) {
+        return false;
+      }
+      if (!hasBit(this.allowMask, bit)) {
+        return false;
+      }
       remaining &= ~bit;
     }
     return true;
@@ -114,19 +150,25 @@ export class Right {
     const denyLetters = lettersFromMask(this.denyMask);
     const allowLetters = lettersFromMask(this.allowMask);
     const parts: string[] = [];
-    if (denyLetters) parts.push(`-${denyLetters}`);
-    if (allowLetters) parts.push(`+${allowLetters}`);
+    if (denyLetters) {
+      parts.push(`-${denyLetters}`);
+    }
+    if (allowLetters) {
+      parts.push(`+${allowLetters}`);
+    }
     const left = parts.join('');
     return `${left}:${this.path}`;
   }
 
-  toJSON(): { path: string; allow: string; description?: string } {
+  toJSON(): { allow: string; description?: string; path: string } {
     const allow = lettersFromMask(this.allowMask);
-    const out: { path: string; allow: string; description?: string } = {
-      path: this.path,
+    const out: { allow: string; description?: string; path: string } = {
       allow,
+      path: this.path
     };
-    if (this.description) out.description = this.description;
+    if (this.description) {
+      out.description = this.description;
+    }
     return out;
   }
 
@@ -138,13 +180,15 @@ export class Right {
       return re.test(t);
     }
     // No wildcard: segment-aware prefix match
-    if (this.path === '/') return true;
+    if (this.path === '/') {
+      return true;
+    }
     return t === this.path || t.startsWith(this.path + '/');
   }
 
   // Specificity score: more non-wildcard chars => more specific
   specificity(): number {
-    const parts = this.path.split('/').filter((p) => p.length > 0);
+    const parts = this.path.split('/').filter(p => p.length > 0);
     let literalCount = 0;
     let literalLen = 0;
     for (const p of parts) {
@@ -162,19 +206,17 @@ export class Right {
     let out = '^';
     for (let i = 0; i < pattern.length; i++) {
       const ch = pattern[i];
+      if (!ch) {
+        continue;
+      }
       if (ch === '*') {
         let starCount = 1;
         while (i + 1 < pattern.length && pattern[i + 1] === '*') {
           starCount++;
           i++;
         }
-        if (starCount >= 2) {
-          // '**' => match across segments
-          out += '.*';
-        } else {
-          // '*' => within a segment (no slash)
-          out += '[^/]*';
-        }
+
+        out += starCount >= 2 ? '.*' : '[^/]*';
         continue;
       }
       if (ch === '?') {
@@ -182,11 +224,7 @@ export class Right {
         continue;
       }
       // Escape regex specials
-      if ('\\^$+.?()|{}[]'.includes(ch)) {
-        out += '\\' + ch;
-      } else {
-        out += ch;
-      }
+      out += String.raw`\^$+.?()|{}[]`.includes(ch) ? '\\' + ch : ch;
     }
     out += '$';
     return new RegExp(out);
@@ -215,7 +253,8 @@ export class Right {
         letters += groups[i];
         i++;
       }
-      const apply = sign === '+' ? (f: Flags) => r.allow(f) : (f: Flags) => r.deny(f);
+      const apply =
+        sign === '+' ? (f: Flags) => r.allow(f) : (f: Flags) => r.deny(f);
       if (letters === '*') {
         apply(Flags.ALL);
         continue;
@@ -251,20 +290,24 @@ export class Rights {
 
   allow(path: string, ...flags: Flags[]): this {
     const p = normalizePath(path);
-    let r = this.list.find((x) => x.path === p);
+    let r = this.list.find(x => x.path === p);
     if (!r) {
       r = new Right(p);
       this.add(r);
     }
     // Support spreading an array: allow(path, [Flags.READ] as any)
-    const flat: Flags[] = ([] as Flags[]).concat(...(flags as unknown as Flags[][]));
-    for (const f of flat) r.allow(f);
+    const flat: Flags[] = ([] as Flags[]).concat(
+      ...(flags as unknown as Flags[][])
+    );
+    for (const f of flat) {
+      r.allow(f);
+    }
     return this;
   }
 
   deny(path: string, flag: Flags): this {
     const p = normalizePath(path);
-    let r = this.list.find((x) => x.path === p);
+    let r = this.list.find(x => x.path === p);
     if (!r) {
       r = new Right(p);
       this.add(r);
@@ -275,18 +318,28 @@ export class Rights {
 
   private matchOrdered(path: string): Right[] {
     return this.list
-      .filter((r) => r.matches(path))
+      .filter(r => r.matches(path))
       .sort((a, b) => b.specificity() - a.specificity());
   }
 
   has(path: string, flag: Flags): boolean {
     // For composite masks, all bits must succeed
-    const bits: Flags[] = [Flags.READ, Flags.WRITE, Flags.DELETE, Flags.CREATE, Flags.EXECUTE];
+    const bits: Flags[] = [
+      Flags.READ,
+      Flags.WRITE,
+      Flags.DELETE,
+      Flags.CREATE,
+      Flags.EXECUTE
+    ];
     let remaining = flag;
     for (const bit of bits) {
-      if (!hasBit(remaining, bit)) continue;
+      if (!hasBit(remaining, bit)) {
+        continue;
+      }
       const ok = this.hasSingle(path, bit);
-      if (!ok) return false;
+      if (!ok) {
+        return false;
+      }
       remaining &= ~bit;
     }
     return true;
@@ -295,8 +348,12 @@ export class Rights {
   private hasSingle(path: string, bit: Flags): boolean {
     const matches = this.matchOrdered(normalizePath(path));
     for (const r of matches) {
-      if (hasBit(r.denyMaskValue, bit)) return false;
-      if (hasBit(r.allowMaskValue, bit)) return true;
+      if (hasBit(r.denyMaskValue, bit)) {
+        return false;
+      }
+      if (hasBit(r.allowMaskValue, bit)) {
+        return true;
+      }
     }
     return false;
   }
@@ -323,16 +380,16 @@ export class Rights {
 
   toString(): string {
     return this.list
-      .map((r) => `+${lettersFromMask(r.allowMaskValue)}:${r.path}`)
+      .map(r => `+${lettersFromMask(r.allowMaskValue)}:${r.path}`)
       .join(', ');
   }
 
-  toJSON(): Array<{ path: string; allow: string; description?: string }> {
-    return this.list.map((r) => r.toJSON());
+  toJSON(): Array<{ allow: string; description?: string; path: string }> {
+    return this.list.map(r => r.toJSON());
   }
 
   static fromJSON(
-    arr: Array<{ path: string; allow: string; description?: string }>
+    arr: Array<{ allow: string; description?: string; path: string }>
   ): Rights {
     const rights = new Rights();
     for (const item of arr) {
@@ -366,11 +423,15 @@ export class Rights {
 
   static parse(input: string): Rights {
     const rights = new Rights();
-    if (!input) return rights;
-    const parts = input.split(/[,\r?\n]+/);
+    if (!input) {
+      return rights;
+    }
+    const parts = input.split(/[\n\r,?]+/);
     for (const part of parts) {
       const trimmed = part.trim();
-      if (!trimmed) continue;
+      if (!trimmed) {
+        continue;
+      }
       const r = Right.parse(trimmed);
       rights.add(r);
     }
@@ -378,6 +439,6 @@ export class Rights {
   }
 
   format(separator = ', '): string {
-    return this.list.map((r) => r.toString()).join(separator);
+    return this.list.map(r => r.toString()).join(separator);
   }
 }

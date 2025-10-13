@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
+
 import { Flags, Right, Rights } from '../index';
 
 describe('Right basics', () => {
@@ -25,8 +26,8 @@ describe('Right basics', () => {
     expect(right.toString()).toBe(':/');
     right.allow(Flags.READ);
     expect(right.toJSON()).toEqual({
-      path: '/',
       allow: 'r',
+      path: '/'
     });
   });
 });
@@ -44,7 +45,7 @@ describe('Rights matching & precedence', () => {
 
     const deviceRight = new Right('/*/device/**', {
       allow: [Flags.CREATE],
-      deny: [Flags.READ],
+      deny: [Flags.READ]
     });
     rights.add(deviceRight);
 
@@ -65,13 +66,13 @@ describe('Rights convenience & JSON', () => {
     rights.add(
       new Right('/*/device/**', {
         allow: [Flags.CREATE],
-        deny: [Flags.READ],
+        deny: [Flags.READ]
       })
     );
 
     const userRight = new Right('/system/user/*', {
       allow: [Flags.ALL],
-      description: 'User management',
+      description: 'User management'
     });
     rights.add(userRight);
 
@@ -84,18 +85,18 @@ describe('Rights convenience & JSON', () => {
 
     expect(rights.toJSON()).toEqual([
       {
-        path: '/',
         allow: 'r',
+        path: '/'
       },
       {
-        path: '/*/device/**',
         allow: 'c',
+        path: '/*/device/**'
       },
       {
-        path: '/system/user/*',
         allow: '*',
         description: 'User management',
-      },
+        path: '/system/user/*'
+      }
     ]);
 
     rights.deny('/system/user/admin', Flags.ALL);
@@ -161,8 +162,8 @@ describe('Rights.parse', () => {
     expect(rights.all('/system/user/abc')).toBe(true);
 
     expect(rights.format()).toBe('+r:/, -c+rw:/system, +*:/system/user/*');
-    expect(rights.format('\n')).toBe(''+
-      '+r:/\n-c+rw:/system\n+*:/system/user/*'
+    expect(rights.format('\n')).toBe(
+      '' + '+r:/\n-c+rw:/system\n+*:/system/user/*'
     );
   });
 });
