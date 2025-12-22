@@ -95,11 +95,17 @@ export class Right {
   private denyMask = 0;
   readonly description?: string;
   readonly condition?: Condition;
+  private readonly _specificity: number;
+  private readonly _re?: RegExp;
 
   constructor(path: string, init?: RightInit) {
     this.path = normalizePath(path);
     this.description = init?.description;
     this.condition = init?.condition;
+    this._specificity = this.calculateSpecificity();
+    if (this.path.includes('*') || this.path.includes('?')) {
+      this._re = Right.globToRegExp(this.path);
+    }
     if (init?.allow) {
       init.allow.forEach(f => this.allow(f));
     }
@@ -183,9 +189,8 @@ export class Right {
   // Pattern match helper
   matches(targetPath: string): boolean {
     const t = normalizePath(targetPath);
-    if (this.path.includes('*') || this.path.includes('?')) {
-      const re = Right.globToRegExp(this.path);
-      return re.test(t);
+    if (this._re) {
+      return this._re.test(t);
     }
     // No wildcard: segment-aware prefix match
     if (this.path === '/') {
@@ -196,6 +201,10 @@ export class Right {
 
   // Specificity score: more non-wildcard chars => more specific
   specificity(): number {
+    return this._specificity;
+  }
+
+  private calculateSpecificity(): number {
     const parts = this.path.split('/').filter(p => p.length > 0);
     let literalCount = 0;
     let literalLen = 0;
@@ -293,9 +302,11 @@ export class Right {
 
 export class Rights {
   private list: Right[] = [];
+  private matchCache = new Map<string, Right[]>();
 
   add(right: Right): this {
     this.list.push(right);
+    this.matchCache.clear();
     return this;
   }
 
@@ -309,6 +320,9 @@ export class Rights {
     if (!r) {
       r = new Right(p);
       this.add(r);
+    } else {
+      // Invalidate cache if we update an existing right
+      this.matchCache.clear();
     }
     // Support spreading an array: allow(path, [Flags.READ] as any)
     const flat: Flags[] = ([] as Flags[]).concat(
@@ -326,15 +340,24 @@ export class Rights {
     if (!r) {
       r = new Right(p);
       this.add(r);
+    } else {
+      // Invalidate cache if we update an existing right
+      this.matchCache.clear();
     }
     r.deny(flag);
     return this;
   }
 
   private matchOrdered(path: string): Right[] {
-    return this.list
+    const cached = this.matchCache.get(path);
+    if (cached) {
+      return cached;
+    }
+    const result = this.list
       .filter(r => r.matches(path))
       .sort((a, b) => b.specificity() - a.specificity());
+    this.matchCache.set(path, result);
+    return result;
   }
 
   has(path: string, flag: Flags, context?: any): boolean {
@@ -495,6 +518,10 @@ export class Role {
   readonly name: string;
   readonly rights: Rights;
   private parents: Role[] = [];
+  private _cachedAllRights: Array<{
+    right: Right;
+    source?: { name: string; type: 'role' };
+  }> | null = null;
 
   constructor(name: string, rights?: Rights) {
     this.name = name;
@@ -507,6 +534,7 @@ export class Role {
     }
     if (!this.parents.includes(role)) {
       this.parents.push(role);
+      this.invalidateCache();
     }
     return this;
   }
@@ -518,6 +546,9 @@ export class Role {
     right: Right;
     source?: { name: string; type: 'role' };
   }> {
+    if (this._cachedAllRights) {
+      return this._cachedAllRights;
+    }
     const list: Array<{
       right: Right;
       source?: { name: string; type: 'role' };
@@ -528,7 +559,12 @@ export class Role {
     for (const parent of this.parents) {
       list.push(...parent.allRights());
     }
+    this._cachedAllRights = list;
     return list;
+  }
+
+  invalidateCache(): void {
+    this._cachedAllRights = null;
   }
 
   toJSON(): any {
@@ -546,12 +582,23 @@ export class Role {
 export class Subject {
   private roles: Role[] = [];
   readonly rights: Rights = new Rights();
+  private _aggregate: Rights | null = null;
+  private _aggregateMeta: Map<
+    Right,
+    { name?: string; type: 'direct' | 'role' }
+  > | null = null;
 
   memberOf(role: Role): this {
     if (!this.roles.includes(role)) {
       this.roles.push(role);
+      this.invalidateCache();
     }
     return this;
+  }
+
+  invalidateCache(): void {
+    this._aggregate = null;
+    this._aggregateMeta = null;
   }
 
   has(path: string, flag: Flags, context?: any): boolean {
@@ -571,31 +618,36 @@ export class Subject {
       source?: { name?: string; type: 'direct' | 'role' };
     }>;
   } {
-    const aggregate = new Rights();
-    const meta = new Map<Right, { name?: string; type: 'direct' | 'role' }>();
+    if (!this._aggregate) {
+      this._aggregate = new Rights();
+      this._aggregateMeta = new Map<
+        Right,
+        { name?: string; type: 'direct' | 'role' }
+      >();
 
-    // Add rights from roles
-    for (const role of this.roles) {
-      for (const entry of role.allRights()) {
-        aggregate.add(entry.right);
-        if (entry.source) {
-          meta.set(entry.right, entry.source);
+      // Add rights from roles
+      for (const role of this.roles) {
+        for (const entry of role.allRights()) {
+          this._aggregate.add(entry.right);
+          if (entry.source) {
+            this._aggregateMeta.set(entry.right, entry.source);
+          }
         }
+      }
+
+      // Add direct rights
+      for (const r of this.rights.allRights()) {
+        this._aggregate.add(r);
+        this._aggregateMeta.set(r, { type: 'direct' });
       }
     }
 
-    // Add direct rights
-    for (const r of this.rights.allRights()) {
-      aggregate.add(r);
-      meta.set(r, { type: 'direct' });
-    }
-
-    const res = aggregate.explain(path, flag, context);
+    const res = this._aggregate.explain(path, flag, context);
     return {
       allowed: res.allowed,
       details: res.details.map(d => ({
         ...d,
-        source: d.right ? meta.get(d.right) : undefined
+        source: d.right ? this._aggregateMeta!.get(d.right) : undefined
       }))
     };
   }
