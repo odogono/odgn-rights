@@ -37,15 +37,15 @@ const normalizePath = (p: string): string => {
   return out;
 };
 
-// Map flags to display letters. Note: both CREATE and DELETE collapse to 'c'
-// to match expected output in tests.
-const letterForFlag = (flag: Flags): 'r' | 'w' | 'c' | 'x' => {
+// Map flags to display letters.
+const letterForFlag = (flag: Flags): 'r' | 'w' | 'c' | 'd' | 'x' => {
   switch (flag) {
     case Flags.READ:
       return 'r';
     case Flags.WRITE:
       return 'w';
     case Flags.DELETE:
+      return 'd';
     case Flags.CREATE:
       return 'c';
     case Flags.EXECUTE:
@@ -66,9 +66,11 @@ const lettersFromMask = (mask: number): string => {
   if (hasBit(mask, Flags.WRITE)) {
     letters.push('w');
   }
-  // Collapse CREATE and DELETE as 'c'
-  if (hasBit(mask, Flags.CREATE) || hasBit(mask, Flags.DELETE)) {
+  if (hasBit(mask, Flags.CREATE)) {
     letters.push('c');
+  }
+  if (hasBit(mask, Flags.DELETE)) {
+    letters.push('d');
   }
   if (hasBit(mask, Flags.EXECUTE)) {
     letters.push('x');
@@ -270,6 +272,9 @@ export class Right {
           case 'c':
             apply(Flags.CREATE);
             break;
+          case 'd':
+            apply(Flags.DELETE);
+            break;
           case 'x':
             apply(Flags.EXECUTE);
             break;
@@ -286,6 +291,10 @@ export class Rights {
   add(right: Right): this {
     this.list.push(right);
     return this;
+  }
+
+  allRights(): Right[] {
+    return [...this.list];
   }
 
   allow(path: string, ...flags: Flags[]): this {
@@ -410,6 +419,9 @@ export class Rights {
             case 'c':
               r.allow(Flags.CREATE);
               break;
+            case 'd':
+              r.allow(Flags.DELETE);
+              break;
             case 'x':
               r.allow(Flags.EXECUTE);
               break;
@@ -440,5 +452,137 @@ export class Rights {
 
   format(separator = ', '): string {
     return this.list.map(r => r.toString()).join(separator);
+  }
+}
+
+export class Role {
+  readonly name: string;
+  readonly rights: Rights;
+  private parents: Role[] = [];
+
+  constructor(name: string, rights?: Rights) {
+    this.name = name;
+    this.rights = rights ?? new Rights();
+  }
+
+  inheritsFrom(role: Role): this {
+    if (role === this) {
+      throw new Error(`Role ${this.name} cannot inherit from itself`);
+    }
+    if (!this.parents.includes(role)) {
+      this.parents.push(role);
+    }
+    return this;
+  }
+
+  /**
+   * Returns all rights associated with this role, including inherited ones.
+   */
+  allRights(): Right[] {
+    const list: Right[] = [...this.rights.allRights()];
+    for (const parent of this.parents) {
+      list.push(...parent.allRights());
+    }
+    return list;
+  }
+
+  toJSON(): any {
+    const out: any = {
+      name: this.name,
+      rights: this.rights.toJSON()
+    };
+    if (this.parents.length > 0) {
+      out.inherits = this.parents.map(p => p.name);
+    }
+    return out;
+  }
+}
+
+export class Subject {
+  private roles: Role[] = [];
+  readonly rights: Rights = new Rights();
+
+  memberOf(role: Role): this {
+    if (!this.roles.includes(role)) {
+      this.roles.push(role);
+    }
+    return this;
+  }
+
+  has(path: string, flag: Flags): boolean {
+    const aggregate = new Rights();
+    
+    // Add rights from roles
+    for (const role of this.roles) {
+      for (const r of role.allRights()) {
+        aggregate.add(r);
+      }
+    }
+
+    // Add direct rights (direct rights should probably win if they are same specificity, 
+    // but the specificity logic in Rights handles it based on order of adding if scores are same.
+    // Usually we want direct rights to be added last so they win on ties.)
+    for (const r of this.rights.allRights()) {
+      aggregate.add(r);
+    }
+
+    return aggregate.has(path, flag);
+  }
+
+  // Convenience helpers
+  all(path: string): boolean { return this.has(path, Flags.ALL); }
+  read(path: string): boolean { return this.has(path, Flags.READ); }
+  write(path: string): boolean { return this.has(path, Flags.WRITE); }
+  delete(path: string): boolean { return this.has(path, Flags.DELETE); }
+  create(path: string): boolean { return this.has(path, Flags.CREATE); }
+  execute(path: string): boolean { return this.has(path, Flags.EXECUTE); }
+}
+
+export class RoleRegistry {
+  private roles: Map<string, Role> = new Map();
+
+  define(name: string, rights?: Rights): Role {
+    let role = this.roles.get(name);
+    if (!role) {
+      role = new Role(name, rights);
+      this.roles.set(name, role);
+    } else if (rights) {
+      for (const r of rights.allRights()) {
+        role.rights.add(r);
+      }
+    }
+    return role;
+  }
+
+  get(name: string): Role | undefined {
+    return this.roles.get(name);
+  }
+
+  toJSON(): any {
+    return Array.from(this.roles.values()).map(r => r.toJSON());
+  }
+
+  static fromJSON(data: any[]): RoleRegistry {
+    const registry = new RoleRegistry();
+    
+    // First pass: create all roles
+    for (const item of data) {
+      registry.define(item.name, item.rights ? Rights.fromJSON(item.rights) : undefined);
+    }
+    
+    // Second pass: resolve inheritance
+    for (const item of data) {
+      const role = registry.get(item.name)!;
+      if (item.inherits) {
+        for (const parentName of item.inherits) {
+          const parent = registry.get(parentName);
+          if (parent) {
+            role.inheritsFrom(parent);
+          }
+        }
+      }
+    }
+    
+    return registry;
   }
 }

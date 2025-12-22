@@ -1,0 +1,83 @@
+import { describe, expect, it } from 'bun:test';
+
+import { Flags, Rights, Role, RoleRegistry, Subject } from '../index';
+
+describe('Role Basics', () => {
+  it('inherits rights from parents', () => {
+    const adminRights = new Rights().allow('/', Flags.ALL);
+    const adminRole = new Role('admin', adminRights);
+
+    const userRole = new Role('user');
+    userRole.inheritsFrom(adminRole);
+
+    const subject = new Subject().memberOf(userRole);
+    expect(subject.all('/')).toBe(true);
+  });
+
+  it('handles complex inheritance and specificity', () => {
+    // Viewer role: can read everything
+    const viewer = new Role('viewer', new Rights().allow('/', Flags.READ));
+
+    // Editor role: inherits viewer, can write to /content
+    const editor = new Role(
+      'editor',
+      new Rights().allow('/content', Flags.WRITE)
+    );
+    editor.inheritsFrom(viewer);
+
+    // Restricted Editor: inherits editor, but DENIED write to /content/private
+    const restricted = new Role(
+      'restricted_editor',
+      new Rights().deny('/content/private', Flags.WRITE)
+    );
+    restricted.inheritsFrom(editor);
+
+    const sub = new Subject().memberOf(restricted);
+
+    expect(sub.read('/anywhere')).toBe(true); // From viewer
+    expect(sub.write('/content/public')).toBe(true); // From editor
+    expect(sub.write('/content/private')).toBe(false); // Denied by restricted
+  });
+});
+
+describe('Subject Aggregation', () => {
+  it('combines rights from multiple roles', () => {
+    const reader = new Role('reader', new Rights().allow('/docs', Flags.READ));
+    const writer = new Role('writer', new Rights().allow('/docs', Flags.WRITE));
+
+    const sub = new Subject().memberOf(reader).memberOf(writer);
+
+    expect(sub.read('/docs')).toBe(true);
+    expect(sub.write('/docs')).toBe(true);
+    expect(sub.create('/docs')).toBe(false);
+  });
+
+  it('prefers direct subject rights over roles if more specific', () => {
+    const admin = new Role('admin', new Rights().allow('/', Flags.ALL));
+    const sub = new Subject().memberOf(admin);
+
+    // Direct deny on a specific path
+    sub.rights.deny('/protected', Flags.ALL);
+
+    expect(sub.all('/other')).toBe(true);
+    expect(sub.all('/protected')).toBe(false);
+  });
+});
+
+describe('RoleRegistry', () => {
+  it('serializes and deserializes with inheritance', () => {
+    const registry = new RoleRegistry();
+    const base = registry.define('base', new Rights().allow('/', Flags.READ));
+    const admin = registry.define('admin', new Rights().allow('/', Flags.ALL));
+    admin.inheritsFrom(base);
+
+    const json = registry.toJSON();
+    const loaded = RoleRegistry.fromJSON(json);
+
+    const loadedAdmin = loaded.get('admin');
+    expect(loadedAdmin).toBeDefined();
+
+    const sub = new Subject().memberOf(loadedAdmin!);
+    expect(sub.all('/')).toBe(true);
+  });
+});

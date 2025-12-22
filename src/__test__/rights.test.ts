@@ -21,7 +21,7 @@ describe('Right basics', () => {
     right.allow(Flags.WRITE);
     expect(right.toString()).toBe('+rw:/');
     right.deny(Flags.DELETE);
-    expect(right.toString()).toBe('-c+rw:/');
+    expect(right.toString()).toBe('-d+rw:/');
     right.clear();
     expect(right.toString()).toBe(':/');
     right.allow(Flags.READ);
@@ -165,5 +165,21 @@ describe('Rights.parse', () => {
     expect(rights.format('\n')).toBe(
       '' + '+r:/\n-c+rw:/system\n+*:/system/user/*'
     );
+  });
+
+  it('uniquely identifies create and delete', () => {
+    const rights = new Rights();
+    rights.allow('/', Flags.ALL);
+    rights.deny('/protected', Flags.DELETE);
+
+    expect(rights.delete('/protected/file')).toBe(false);
+    expect(rights.create('/protected/file')).toBe(true);
+
+    const serialized = rights.format();
+    expect(serialized).toBe('+*:/, -d:/protected');
+
+    const parsed = Rights.parse(serialized);
+    expect(parsed.delete('/protected/file')).toBe(false);
+    expect(parsed.create('/protected/file')).toBe(true);
   });
 });
