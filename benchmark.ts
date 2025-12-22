@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 import { Flags, Right, Rights, Role, Subject } from './src/index';
 
 console.log('--- Performance Benchmarks ---');
@@ -11,7 +12,7 @@ const runBenchmarks = () => {
   }
 
   let start = performance.now();
-  let iterations = 20000;
+  let iterations = 20_000;
   for (let i = 0; i < iterations; i++) {
     rights.has(`/path/${i % 100}/some/long/sub/path`, Flags.READ);
     rights.has(`/other/${i % 100}/file`, Flags.WRITE);
@@ -37,7 +38,7 @@ const runBenchmarks = () => {
   }
 
   start = performance.now();
-  iterations = 10000;
+  iterations = 10_000;
   for (let i = 0; i < iterations; i++) {
     sub.has(`/role/${i % 50}/anything`, Flags.READ);
   }

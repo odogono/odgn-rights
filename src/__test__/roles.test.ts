@@ -91,9 +91,9 @@ describe('Explanation API', () => {
     const explanation = sub.explain('/docs', Flags.CREATE);
     expect(explanation.allowed).toBe(false);
     expect(explanation.details).toHaveLength(1);
-    expect(explanation.details[0].bit).toBe(Flags.CREATE);
-    expect(explanation.details[0].allowed).toBe(false);
-    expect(explanation.details[0].right).toBeUndefined();
+    expect(explanation.details[0]!.bit).toBe(Flags.CREATE);
+    expect(explanation.details[0]!.allowed).toBe(false);
+    expect(explanation.details[0]!.right).toBeUndefined();
   });
 
   it('explains which role provided a right', () => {
@@ -102,11 +102,11 @@ describe('Explanation API', () => {
 
     const explanation = sub.explain('/docs', Flags.READ);
     expect(explanation.allowed).toBe(true);
-    expect(explanation.details[0].source).toEqual({
+    expect(explanation.details[0]!.source).toEqual({
       name: 'reader',
       type: 'role'
     });
-    expect(explanation.details[0].right?.path).toBe('/docs');
+    expect(explanation.details[0]!.right?.path).toBe('/docs');
   });
 
   it('explains a multi-bit check', () => {
@@ -132,17 +132,19 @@ describe('ABAC / Contextual Rights', () => {
     rights.add(
       new Right('/posts/*', {
         allow: [Flags.WRITE],
-        condition: ctx => ctx?.userId === ctx?.ownerId
+        condition: ctx =>
+          (ctx as { userId: string }).userId ===
+          (ctx as { ownerId: string }).ownerId
       })
     );
 
     // Denied if IDs don't match
-    expect(rights.write('/posts/123', { userId: 'abc', ownerId: 'xyz' })).toBe(
+    expect(rights.write('/posts/123', { ownerId: 'xyz', userId: 'abc' })).toBe(
       false
     );
 
     // Allowed if IDs match
-    expect(rights.write('/posts/123', { userId: 'abc', ownerId: 'abc' })).toBe(
+    expect(rights.write('/posts/123', { ownerId: 'abc', userId: 'abc' })).toBe(
       true
     );
   });
@@ -156,8 +158,8 @@ describe('ABAC / Contextual Rights', () => {
     // Conditional deny
     rights.add(
       new Right('/secret', {
-        deny: [Flags.READ],
-        condition: ctx => !ctx?.isInternal
+        condition: ctx => !(ctx as { isInternal: boolean }).isInternal,
+        deny: [Flags.READ]
       })
     );
 

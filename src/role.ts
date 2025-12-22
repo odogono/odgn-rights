@@ -1,0 +1,68 @@
+import { Right } from './right';
+import { Rights } from './rights';
+import type { RoleJSON } from './role-registry';
+
+export class Role {
+  readonly name: string;
+  readonly rights: Rights;
+  private parents: Role[] = [];
+  private _cachedAllRights: Array<{
+    right: Right;
+    source?: { name: string; type: 'role' };
+  }> | null = null;
+
+  constructor(name: string, rights?: Rights) {
+    this.name = name;
+    this.rights = rights ?? new Rights();
+  }
+
+  inheritsFrom(role: Role): this {
+    if (role === this) {
+      throw new Error(`Role ${this.name} cannot inherit from itself`);
+    }
+    if (!this.parents.includes(role)) {
+      this.parents.push(role);
+      this.invalidateCache();
+    }
+    return this;
+  }
+
+  /**
+   * Returns all rights associated with this role, including inherited ones.
+   */
+  allRights(): Array<{
+    right: Right;
+    source?: { name: string; type: 'role' };
+  }> {
+    if (this._cachedAllRights) {
+      return this._cachedAllRights;
+    }
+    const list: Array<{
+      right: Right;
+      source?: { name: string; type: 'role' };
+    }> = this.rights.allRights().map(r => ({
+      right: r,
+      source: { name: this.name, type: 'role' as const }
+    }));
+    for (const parent of this.parents) {
+      list.push(...parent.allRights());
+    }
+    this._cachedAllRights = list;
+    return list;
+  }
+
+  invalidateCache(): void {
+    this._cachedAllRights = null;
+  }
+
+  toJSON(): RoleJSON {
+    const out: RoleJSON = {
+      name: this.name,
+      rights: this.rights.toJSON()
+    };
+    if (this.parents.length > 0) {
+      out.inherits = this.parents.map(p => p.name);
+    }
+    return out;
+  }
+}
