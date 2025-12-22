@@ -13,6 +13,14 @@ export const Flags = {
 
 export type Flags = (typeof Flags)[keyof typeof Flags];
 
+const ALL_BITS: Flags[] = [
+  Flags.READ,
+  Flags.WRITE,
+  Flags.DELETE,
+  Flags.CREATE,
+  Flags.EXECUTE
+];
+
 type RightInit = {
   allow?: Flags[];
   deny?: Flags[];
@@ -118,14 +126,7 @@ export class Right {
   has(flag: Flags): boolean {
     // For composite masks, require all bits
     let remaining = flag;
-    const bits: Flags[] = [
-      Flags.READ,
-      Flags.WRITE,
-      Flags.DELETE,
-      Flags.CREATE,
-      Flags.EXECUTE
-    ];
-    for (const bit of bits) {
+    for (const bit of ALL_BITS) {
       if (!hasBit(remaining, bit)) {
         continue;
       }
@@ -333,15 +334,8 @@ export class Rights {
 
   has(path: string, flag: Flags): boolean {
     // For composite masks, all bits must succeed
-    const bits: Flags[] = [
-      Flags.READ,
-      Flags.WRITE,
-      Flags.DELETE,
-      Flags.CREATE,
-      Flags.EXECUTE
-    ];
     let remaining = flag;
-    for (const bit of bits) {
+    for (const bit of ALL_BITS) {
       if (!hasBit(remaining, bit)) {
         continue;
       }
@@ -354,17 +348,49 @@ export class Rights {
     return true;
   }
 
+  explain(
+    path: string,
+    flag: Flags
+  ): {
+    allowed: boolean;
+    details: Array<{ allowed: boolean; bit: Flags; right?: Right }>;
+  } {
+    const p = normalizePath(path);
+    const details: Array<{ allowed: boolean; bit: Flags; right?: Right }> = [];
+    let allAllowed = true;
+
+    for (const bit of ALL_BITS) {
+      if (!hasBit(flag, bit)) {
+        continue;
+      }
+      const res = this.explainSingle(p, bit);
+      if (!res.allowed) {
+        allAllowed = false;
+      }
+      details.push({ bit, ...res });
+    }
+
+    return { allowed: allAllowed, details };
+  }
+
   private hasSingle(path: string, bit: Flags): boolean {
+    return this.explainSingle(path, bit).allowed;
+  }
+
+  private explainSingle(
+    path: string,
+    bit: Flags
+  ): { allowed: boolean; right?: Right } {
     const matches = this.matchOrdered(normalizePath(path));
     for (const r of matches) {
       if (hasBit(r.denyMaskValue, bit)) {
-        return false;
+        return { allowed: false, right: r };
       }
       if (hasBit(r.allowMaskValue, bit)) {
-        return true;
+        return { allowed: true, right: r };
       }
     }
-    return false;
+    return { allowed: false };
   }
 
   // Convenience helpers
@@ -478,8 +504,17 @@ export class Role {
   /**
    * Returns all rights associated with this role, including inherited ones.
    */
-  allRights(): Right[] {
-    const list: Right[] = [...this.rights.allRights()];
+  allRights(): Array<{
+    right: Right;
+    source?: { name: string; type: 'role' };
+  }> {
+    const list: Array<{
+      right: Right;
+      source?: { name: string; type: 'role' };
+    }> = this.rights.allRights().map(r => ({
+      right: r,
+      source: { name: this.name, type: 'role' as const }
+    }));
     for (const parent of this.parents) {
       list.push(...parent.allRights());
     }
@@ -510,32 +545,69 @@ export class Subject {
   }
 
   has(path: string, flag: Flags): boolean {
+    return this.explain(path, flag).allowed;
+  }
+
+  explain(
+    path: string,
+    flag: Flags
+  ): {
+    allowed: boolean;
+    details: Array<{
+      allowed: boolean;
+      bit: Flags;
+      right?: Right;
+      source?: { name?: string; type: 'direct' | 'role' };
+    }>;
+  } {
     const aggregate = new Rights();
-    
+    const meta = new Map<Right, { name?: string; type: 'direct' | 'role' }>();
+
     // Add rights from roles
     for (const role of this.roles) {
-      for (const r of role.allRights()) {
-        aggregate.add(r);
+      for (const entry of role.allRights()) {
+        aggregate.add(entry.right);
+        if (entry.source) {
+          meta.set(entry.right, entry.source);
+        }
       }
     }
 
-    // Add direct rights (direct rights should probably win if they are same specificity, 
-    // but the specificity logic in Rights handles it based on order of adding if scores are same.
-    // Usually we want direct rights to be added last so they win on ties.)
+    // Add direct rights
     for (const r of this.rights.allRights()) {
       aggregate.add(r);
+      meta.set(r, { type: 'direct' });
     }
 
-    return aggregate.has(path, flag);
+    const res = aggregate.explain(path, flag);
+    return {
+      allowed: res.allowed,
+      details: res.details.map(d => ({
+        ...d,
+        source: d.right ? meta.get(d.right) : undefined
+      }))
+    };
   }
 
   // Convenience helpers
-  all(path: string): boolean { return this.has(path, Flags.ALL); }
-  read(path: string): boolean { return this.has(path, Flags.READ); }
-  write(path: string): boolean { return this.has(path, Flags.WRITE); }
-  delete(path: string): boolean { return this.has(path, Flags.DELETE); }
-  create(path: string): boolean { return this.has(path, Flags.CREATE); }
-  execute(path: string): boolean { return this.has(path, Flags.EXECUTE); }
+  all(path: string): boolean {
+    return this.has(path, Flags.ALL);
+  }
+  read(path: string): boolean {
+    return this.has(path, Flags.READ);
+  }
+  write(path: string): boolean {
+    return this.has(path, Flags.WRITE);
+  }
+  delete(path: string): boolean {
+    return this.has(path, Flags.DELETE);
+  }
+  create(path: string): boolean {
+    return this.has(path, Flags.CREATE);
+  }
+  execute(path: string): boolean {
+    return this.has(path, Flags.EXECUTE);
+  }
 }
 
 export class RoleRegistry {
@@ -564,12 +636,15 @@ export class RoleRegistry {
 
   static fromJSON(data: any[]): RoleRegistry {
     const registry = new RoleRegistry();
-    
+
     // First pass: create all roles
     for (const item of data) {
-      registry.define(item.name, item.rights ? Rights.fromJSON(item.rights) : undefined);
+      registry.define(
+        item.name,
+        item.rights ? Rights.fromJSON(item.rights) : undefined
+      );
     }
-    
+
     // Second pass: resolve inheritance
     for (const item of data) {
       const role = registry.get(item.name)!;
@@ -582,7 +657,7 @@ export class RoleRegistry {
         }
       }
     }
-    
+
     return registry;
   }
 }

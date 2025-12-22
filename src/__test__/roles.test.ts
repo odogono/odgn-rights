@@ -81,3 +81,47 @@ describe('RoleRegistry', () => {
     expect(sub.all('/')).toBe(true);
   });
 });
+
+describe('Explanation API', () => {
+  it('explains why a subject was denied', () => {
+    const reader = new Role('reader', new Rights().allow('/docs', Flags.READ));
+    const writer = new Role('writer', new Rights().allow('/docs', Flags.WRITE));
+    const sub = new Subject().memberOf(reader).memberOf(writer);
+
+    const explanation = sub.explain('/docs', Flags.CREATE);
+    expect(explanation.allowed).toBe(false);
+    expect(explanation.details).toHaveLength(1);
+    expect(explanation.details[0].bit).toBe(Flags.CREATE);
+    expect(explanation.details[0].allowed).toBe(false);
+    expect(explanation.details[0].right).toBeUndefined();
+  });
+
+  it('explains which role provided a right', () => {
+    const reader = new Role('reader', new Rights().allow('/docs', Flags.READ));
+    const sub = new Subject().memberOf(reader);
+
+    const explanation = sub.explain('/docs', Flags.READ);
+    expect(explanation.allowed).toBe(true);
+    expect(explanation.details[0].source).toEqual({
+      name: 'reader',
+      type: 'role'
+    });
+    expect(explanation.details[0].right?.path).toBe('/docs');
+  });
+
+  it('explains a multi-bit check', () => {
+    const editor = new Role(
+      'editor',
+      new Rights().allow('/docs', Flags.READ, Flags.WRITE)
+    );
+    const sub = new Subject().memberOf(editor);
+
+    const explanation = sub.explain(
+      '/docs',
+      (Flags.READ | Flags.WRITE) as Flags
+    );
+    expect(explanation.allowed).toBe(true);
+    expect(explanation.details).toHaveLength(2);
+    expect(explanation.details.every(d => d.allowed)).toBe(true);
+  });
+});
