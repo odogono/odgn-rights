@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 
-import { Flags, Rights, Role, RoleRegistry, Subject } from '../index';
+import { Flags, Right, Rights, Role, RoleRegistry, Subject } from '../index';
 
 describe('Role Basics', () => {
   it('inherits rights from parents', () => {
@@ -123,5 +123,45 @@ describe('Explanation API', () => {
     expect(explanation.allowed).toBe(true);
     expect(explanation.details).toHaveLength(2);
     expect(explanation.details.every(d => d.allowed)).toBe(true);
+  });
+});
+
+describe('ABAC / Contextual Rights', () => {
+  it('evaluates conditions based on context', () => {
+    const rights = new Rights();
+    rights.add(
+      new Right('/posts/*', {
+        allow: [Flags.WRITE],
+        condition: ctx => ctx?.userId === ctx?.ownerId
+      })
+    );
+
+    // Denied if IDs don't match
+    expect(rights.write('/posts/123', { userId: 'abc', ownerId: 'xyz' })).toBe(
+      false
+    );
+
+    // Allowed if IDs match
+    expect(rights.write('/posts/123', { userId: 'abc', ownerId: 'abc' })).toBe(
+      true
+    );
+  });
+
+  it('skips rights where condition is not met in specificity chain', () => {
+    const rights = new Rights();
+
+    // General allow
+    rights.allow('/', Flags.READ);
+
+    // Conditional deny
+    rights.add(
+      new Right('/secret', {
+        deny: [Flags.READ],
+        condition: ctx => !ctx?.isInternal
+      })
+    );
+
+    expect(rights.read('/secret', { isInternal: true })).toBe(true); // Condition not met, skip deny
+    expect(rights.read('/secret', { isInternal: false })).toBe(false); // Condition met, apply deny
   });
 });

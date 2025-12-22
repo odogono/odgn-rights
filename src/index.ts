@@ -13,6 +13,8 @@ export const Flags = {
 
 export type Flags = (typeof Flags)[keyof typeof Flags];
 
+export type Condition = (context?: any) => boolean;
+
 const ALL_BITS: Flags[] = [
   Flags.READ,
   Flags.WRITE,
@@ -25,6 +27,7 @@ type RightInit = {
   allow?: Flags[];
   deny?: Flags[];
   description?: string;
+  condition?: Condition;
 };
 
 const hasBit = (mask: number, bit: number) => (mask & bit) === bit;
@@ -91,10 +94,12 @@ export class Right {
   private allowMask = 0;
   private denyMask = 0;
   readonly description?: string;
+  readonly condition?: Condition;
 
   constructor(path: string, init?: RightInit) {
     this.path = normalizePath(path);
     this.description = init?.description;
+    this.condition = init?.condition;
     if (init?.allow) {
       init.allow.forEach(f => this.allow(f));
     }
@@ -332,14 +337,14 @@ export class Rights {
       .sort((a, b) => b.specificity() - a.specificity());
   }
 
-  has(path: string, flag: Flags): boolean {
+  has(path: string, flag: Flags, context?: any): boolean {
     // For composite masks, all bits must succeed
     let remaining = flag;
     for (const bit of ALL_BITS) {
       if (!hasBit(remaining, bit)) {
         continue;
       }
-      const ok = this.hasSingle(path, bit);
+      const ok = this.hasSingle(path, bit, context);
       if (!ok) {
         return false;
       }
@@ -350,7 +355,8 @@ export class Rights {
 
   explain(
     path: string,
-    flag: Flags
+    flag: Flags,
+    context?: any
   ): {
     allowed: boolean;
     details: Array<{ allowed: boolean; bit: Flags; right?: Right }>;
@@ -363,7 +369,7 @@ export class Rights {
       if (!hasBit(flag, bit)) {
         continue;
       }
-      const res = this.explainSingle(p, bit);
+      const res = this.explainSingle(p, bit, context);
       if (!res.allowed) {
         allAllowed = false;
       }
@@ -373,16 +379,20 @@ export class Rights {
     return { allowed: allAllowed, details };
   }
 
-  private hasSingle(path: string, bit: Flags): boolean {
-    return this.explainSingle(path, bit).allowed;
+  private hasSingle(path: string, bit: Flags, context?: any): boolean {
+    return this.explainSingle(path, bit, context).allowed;
   }
 
   private explainSingle(
     path: string,
-    bit: Flags
+    bit: Flags,
+    context?: any
   ): { allowed: boolean; right?: Right } {
     const matches = this.matchOrdered(normalizePath(path));
     for (const r of matches) {
+      if (r.condition && !r.condition(context)) {
+        continue;
+      }
       if (hasBit(r.denyMaskValue, bit)) {
         return { allowed: false, right: r };
       }
@@ -394,23 +404,23 @@ export class Rights {
   }
 
   // Convenience helpers
-  all(path: string): boolean {
-    return this.has(path, Flags.ALL);
+  all(path: string, context?: any): boolean {
+    return this.has(path, Flags.ALL, context);
   }
-  read(path: string): boolean {
-    return this.has(path, Flags.READ);
+  read(path: string, context?: any): boolean {
+    return this.has(path, Flags.READ, context);
   }
-  write(path: string): boolean {
-    return this.has(path, Flags.WRITE);
+  write(path: string, context?: any): boolean {
+    return this.has(path, Flags.WRITE, context);
   }
-  delete(path: string): boolean {
-    return this.has(path, Flags.DELETE);
+  delete(path: string, context?: any): boolean {
+    return this.has(path, Flags.DELETE, context);
   }
-  create(path: string): boolean {
-    return this.has(path, Flags.CREATE);
+  create(path: string, context?: any): boolean {
+    return this.has(path, Flags.CREATE, context);
   }
-  execute(path: string): boolean {
-    return this.has(path, Flags.EXECUTE);
+  execute(path: string, context?: any): boolean {
+    return this.has(path, Flags.EXECUTE, context);
   }
 
   toString(): string {
@@ -544,13 +554,14 @@ export class Subject {
     return this;
   }
 
-  has(path: string, flag: Flags): boolean {
-    return this.explain(path, flag).allowed;
+  has(path: string, flag: Flags, context?: any): boolean {
+    return this.explain(path, flag, context).allowed;
   }
 
   explain(
     path: string,
-    flag: Flags
+    flag: Flags,
+    context?: any
   ): {
     allowed: boolean;
     details: Array<{
@@ -579,7 +590,7 @@ export class Subject {
       meta.set(r, { type: 'direct' });
     }
 
-    const res = aggregate.explain(path, flag);
+    const res = aggregate.explain(path, flag, context);
     return {
       allowed: res.allowed,
       details: res.details.map(d => ({
@@ -590,23 +601,23 @@ export class Subject {
   }
 
   // Convenience helpers
-  all(path: string): boolean {
-    return this.has(path, Flags.ALL);
+  all(path: string, context?: any): boolean {
+    return this.has(path, Flags.ALL, context);
   }
-  read(path: string): boolean {
-    return this.has(path, Flags.READ);
+  read(path: string, context?: any): boolean {
+    return this.has(path, Flags.READ, context);
   }
-  write(path: string): boolean {
-    return this.has(path, Flags.WRITE);
+  write(path: string, context?: any): boolean {
+    return this.has(path, Flags.WRITE, context);
   }
-  delete(path: string): boolean {
-    return this.has(path, Flags.DELETE);
+  delete(path: string, context?: any): boolean {
+    return this.has(path, Flags.DELETE, context);
   }
-  create(path: string): boolean {
-    return this.has(path, Flags.CREATE);
+  create(path: string, context?: any): boolean {
+    return this.has(path, Flags.CREATE, context);
   }
-  execute(path: string): boolean {
-    return this.has(path, Flags.EXECUTE);
+  execute(path: string, context?: any): boolean {
+    return this.has(path, Flags.EXECUTE, context);
   }
 }
 

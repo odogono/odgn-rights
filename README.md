@@ -75,6 +75,23 @@ user.write('/posts/1'); // true (from editor)
 user.write('/config'); // false
 ```
 
+## Contextual Rights (ABAC)
+
+Rights can include a condition predicate that is evaluated at runtime with a provided context.
+
+```ts
+rights.add(
+  new Right('/posts/*', {
+    allow: [Flags.WRITE],
+    condition: ctx => ctx.userId === ctx.ownerId
+  })
+);
+
+// Provide context to the check
+rights.write('/posts/1', { userId: 'abc', ownerId: 'abc' }); // true
+rights.write('/posts/1', { userId: 'abc', ownerId: 'xyz' }); // false
+```
+
 ## Glob Patterns
 
 - `*` matches within a single path segment (`/system/*/id`)
