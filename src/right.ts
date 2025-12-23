@@ -11,6 +11,7 @@ export type RightInit = {
   description?: string;
   validFrom?: Date;
   validUntil?: Date;
+  tags?: string[];
 };
 
 export class Right {
@@ -21,6 +22,7 @@ export class Right {
   readonly condition?: Condition;
   readonly validFrom?: Date;
   readonly validUntil?: Date;
+  private readonly _tags: Set<string>;
   private readonly _specificity: number;
   private readonly _re?: RegExp;
 
@@ -30,6 +32,7 @@ export class Right {
     this.condition = init?.condition;
     this.validFrom = init?.validFrom;
     this.validUntil = init?.validUntil;
+    this._tags = new Set(init?.tags);
 
     if (this.validFrom && this.validUntil && this.validFrom > this.validUntil) {
       throw new Error('validFrom must be before validUntil');
@@ -64,6 +67,31 @@ export class Right {
   clear(): this {
     this.allowMask = 0;
     this.denyMask = 0;
+    return this;
+  }
+
+  get tags(): string[] {
+    return [...this._tags].sort();
+  }
+
+  hasTag(tag: string): boolean {
+    return this._tags.has(tag);
+  }
+
+  hasTags(tags: string[], mode: 'and' | 'or' = 'and'): boolean {
+    if (mode === 'and') {
+      return tags.every(t => this._tags.has(t));
+    }
+    return tags.some(t => this._tags.has(t));
+  }
+
+  addTag(tag: string): this {
+    this._tags.add(tag);
+    return this;
+  }
+
+  removeTag(tag: string): this {
+    this._tags.delete(tag);
     return this;
   }
 
@@ -127,6 +155,10 @@ export class Right {
     const left = parts.join('');
     let res = `${left}:${this.path}`;
 
+    if (this._tags.size > 0) {
+      res += `#${this.tags.join(',')}`;
+    }
+
     if (this.validFrom || this.validUntil) {
       const from = this.validFrom ? this.validFrom.toISOString() : '*';
       const until = this.validUntil ? this.validUntil.toISOString() : '*';
@@ -141,6 +173,7 @@ export class Right {
     deny?: string;
     description?: string;
     path: string;
+    tags?: string[];
     validFrom?: string;
     validUntil?: string;
   } {
@@ -151,6 +184,7 @@ export class Right {
       deny?: string;
       description?: string;
       path: string;
+      tags?: string[];
       validFrom?: string;
       validUntil?: string;
     } = {
@@ -162,6 +196,9 @@ export class Right {
     }
     if (this.description) {
       out.description = this.description;
+    }
+    if (this._tags.size > 0) {
+      out.tags = this.tags;
     }
     if (this.validFrom) {
       out.validFrom = this.validFrom.toISOString();
@@ -236,27 +273,29 @@ export class Right {
   static parse(input: string): Right {
     const s = input.trim();
     const colonIdx = s.indexOf(':');
+    const hashIdx = s.lastIndexOf('#');
     const atIdx = s.lastIndexOf('@');
 
     let flagsStr = '';
     let pathStr = '';
+    let tagsStr = '';
     let timeStr = '';
 
+    let pathEndIdx = s.length;
+    if (atIdx !== -1) {
+      timeStr = s.slice(atIdx + 1);
+      pathEndIdx = atIdx;
+    }
+    if (hashIdx !== -1 && (atIdx === -1 || hashIdx < atIdx)) {
+      tagsStr = s.slice(hashIdx + 1, pathEndIdx);
+      pathEndIdx = hashIdx;
+    }
+
     if (colonIdx === -1) {
-      if (atIdx === -1) {
-        pathStr = s;
-      } else {
-        pathStr = s.slice(0, atIdx);
-        timeStr = s.slice(atIdx + 1);
-      }
+      pathStr = s.slice(0, pathEndIdx);
     } else {
       flagsStr = s.slice(0, colonIdx);
-      if (atIdx === -1 || atIdx < colonIdx) {
-        pathStr = s.slice(colonIdx + 1);
-      } else {
-        pathStr = s.slice(colonIdx + 1, atIdx);
-        timeStr = s.slice(atIdx + 1);
-      }
+      pathStr = s.slice(colonIdx + 1, pathEndIdx);
     }
 
     const init: RightInit = {};
@@ -276,6 +315,10 @@ export class Right {
           init.validUntil = d;
         }
       }
+    }
+
+    if (tagsStr) {
+      init.tags = tagsStr.split(',').map(t => t.trim());
     }
 
     const r = new Right(pathStr, init);

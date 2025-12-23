@@ -7,6 +7,7 @@ export type RightJSON = {
   deny?: string;
   description?: string;
   path: string;
+  tags?: string[];
   validFrom?: string;
   validUntil?: string;
 };
@@ -28,6 +29,42 @@ export class Rights {
     this.list.push(right);
     this.matchCache.clear();
     this.notify();
+    return this;
+  }
+
+  findByTag(tag: string): Right[] {
+    return this.list.filter(r => r.hasTag(tag));
+  }
+
+  findByTags(tags: string[], mode: 'and' | 'or' = 'and'): Right[] {
+    return this.list.filter(r => r.hasTags(tags, mode));
+  }
+
+  revokeByTag(tag: string): this {
+    const toRemove = this.findByTag(tag);
+    if (toRemove.length > 0) {
+      this.list = this.list.filter(r => !toRemove.includes(r));
+      this.matchCache.clear();
+      this.notify();
+    }
+    return this;
+  }
+
+  allowByTag(tag: string, ...flags: Flags[]): this {
+    const matches = this.findByTag(tag);
+    if (matches.length > 0) {
+      // Support spreading an array
+      const flat: Flags[] = ([] as Flags[]).concat(
+        ...(flags as unknown as Flags[][])
+      );
+      for (const r of matches) {
+        for (const f of flat) {
+          r.allow(f);
+        }
+      }
+      this.matchCache.clear();
+      this.notify();
+    }
     return this;
   }
 
@@ -199,7 +236,10 @@ export class Rights {
     const rights = new Rights();
     for (const item of arr) {
       const p = normalizePath(item.path);
-      const init: any = { description: item.description };
+      const init: any = {
+        description: item.description,
+        tags: item.tags
+      };
       if (item.validFrom) {
         const d = new Date(item.validFrom);
         if (!isNaN(d.getTime())) {

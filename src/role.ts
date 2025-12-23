@@ -54,6 +54,12 @@ export class Role {
     return list;
   }
 
+  findRightsByTag(tag: string): Right[] {
+    return this.allRights()
+      .map(r => r.right)
+      .filter(r => r.hasTag(tag));
+  }
+
   invalidateCache(): void {
     this._cachedAllRights = null;
     for (const child of this.children) {
