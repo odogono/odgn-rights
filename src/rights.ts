@@ -4,6 +4,7 @@ import { lettersFromMask, normalizePath } from './utils';
 
 export type RightJSON = {
   allow: string;
+  deny?: string;
   description?: string;
   path: string;
 };
@@ -11,10 +12,20 @@ export type RightJSON = {
 export class Rights {
   private list: Right[] = [];
   private matchCache = new Map<string, Right[]>();
+  private _onChange?: () => void;
+
+  set onChange(cb: () => void | undefined) {
+    this._onChange = cb;
+  }
+
+  private notify() {
+    this._onChange?.();
+  }
 
   add(right: Right): this {
     this.list.push(right);
     this.matchCache.clear();
+    this.notify();
     return this;
   }
 
@@ -27,7 +38,7 @@ export class Rights {
     let r = this.list.find(x => x.path === p);
     if (!r) {
       r = new Right(p);
-      this.add(r);
+      this.list.push(r);
     } else {
       // Invalidate cache if we update an existing right
       this.matchCache.clear();
@@ -39,6 +50,7 @@ export class Rights {
     for (const f of flat) {
       r.allow(f);
     }
+    this.notify();
     return this;
   }
 
@@ -47,12 +59,13 @@ export class Rights {
     let r = this.list.find(x => x.path === p);
     if (!r) {
       r = new Right(p);
-      this.add(r);
+      this.list.push(r);
     } else {
       // Invalidate cache if we update an existing right
       this.matchCache.clear();
     }
     r.deny(flag);
+    this.notify();
     return this;
   }
 
@@ -174,29 +187,41 @@ export class Rights {
       const p = normalizePath(item.path);
       const r = new Right(p, { description: item.description });
       const allowStr = item.allow;
-      if (allowStr === '*') {
-        r.allow(Flags.ALL);
-      } else {
-        for (const ch of allowStr) {
-          switch (ch) {
-            case 'r':
-              r.allow(Flags.READ);
-              break;
-            case 'w':
-              r.allow(Flags.WRITE);
-              break;
-            case 'c':
-              r.allow(Flags.CREATE);
-              break;
-            case 'd':
-              r.allow(Flags.DELETE);
-              break;
-            case 'x':
-              r.allow(Flags.EXECUTE);
-              break;
+      const denyStr = item.deny;
+
+      const applyFlags = (str: string, apply: (f: Flags) => void) => {
+        if (str === '*') {
+          apply(Flags.ALL);
+        } else {
+          for (const ch of str) {
+            switch (ch) {
+              case 'r':
+                apply(Flags.READ);
+                break;
+              case 'w':
+                apply(Flags.WRITE);
+                break;
+              case 'c':
+                apply(Flags.CREATE);
+                break;
+              case 'd':
+                apply(Flags.DELETE);
+                break;
+              case 'x':
+                apply(Flags.EXECUTE);
+                break;
+            }
           }
         }
+      };
+
+      if (allowStr) {
+        applyFlags(allowStr, f => r.allow(f));
       }
+      if (denyStr) {
+        applyFlags(denyStr, f => r.deny(f));
+      }
+
       rights.add(r);
     }
     return rights;

@@ -96,12 +96,26 @@ export class Right {
     return `${left}:${this.path}`;
   }
 
-  toJSON(): { allow: string; description?: string; path: string } {
+  toJSON(): {
+    allow: string;
+    deny?: string;
+    description?: string;
+    path: string;
+  } {
     const allow = lettersFromMask(this.allowMask);
-    const out: { allow: string; description?: string; path: string } = {
+    const deny = lettersFromMask(this.denyMask);
+    const out: {
+      allow: string;
+      deny?: string;
+      description?: string;
+      path: string;
+    } = {
       allow,
       path: this.path
     };
+    if (deny) {
+      out.deny = deny;
+    }
     if (this.description) {
       out.description = this.description;
     }

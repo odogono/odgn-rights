@@ -50,6 +50,10 @@ export class RoleRegistry {
           const parent = registry.get(parentName);
           if (parent) {
             role.inheritsFrom(parent);
+          } else {
+            throw new Error(
+              `Role ${item.name} inherits from missing role ${parentName}`
+            );
           }
         }
       }

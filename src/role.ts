@@ -6,6 +6,7 @@ export class Role {
   readonly name: string;
   readonly rights: Rights;
   private parents: Role[] = [];
+  private children: Role[] = [];
   private _cachedAllRights: Array<{
     right: Right;
     source?: { name: string; type: 'role' };
@@ -14,6 +15,7 @@ export class Role {
   constructor(name: string, rights?: Rights) {
     this.name = name;
     this.rights = rights ?? new Rights();
+    this.rights.onChange = () => this.invalidateCache();
   }
 
   inheritsFrom(role: Role): this {
@@ -22,6 +24,7 @@ export class Role {
     }
     if (!this.parents.includes(role)) {
       this.parents.push(role);
+      role.children.push(this);
       this.invalidateCache();
     }
     return this;
@@ -53,6 +56,9 @@ export class Role {
 
   invalidateCache(): void {
     this._cachedAllRights = null;
+    for (const child of this.children) {
+      child.invalidateCache();
+    }
   }
 
   toJSON(): RoleJSON {

@@ -90,6 +90,7 @@ describe('Rights convenience & JSON', () => {
       },
       {
         allow: 'c',
+        deny: 'r',
         path: '/*/device/**'
       },
       {
@@ -107,6 +108,12 @@ describe('Rights convenience & JSON', () => {
     expect(rights.has('/system/user/admin', Flags.DELETE)).toBe(false);
     expect(rights.has('/system/user/admin', Flags.CREATE)).toBe(false);
     expect(rights.has('/system/user/admin', Flags.EXECUTE)).toBe(false);
+
+    // Round-trip with deny
+    const json = rights.toJSON();
+    const restored = Rights.fromJSON(json);
+    expect(restored.has('/system/user/admin', Flags.ALL)).toBe(false);
+    expect(restored.has('/system/user/1', Flags.ALL)).toBe(true);
   });
 });
 

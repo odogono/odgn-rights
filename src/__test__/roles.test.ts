@@ -62,6 +62,24 @@ describe('Subject Aggregation', () => {
     expect(sub.all('/other')).toBe(true);
     expect(sub.all('/protected')).toBe(false);
   });
+
+  it('serializes and restores subject state', () => {
+    const registry = new RoleRegistry();
+    const adminRole = registry.define('admin');
+    adminRole.rights.allow('/admin', Flags.ALL);
+
+    const subject = new Subject();
+    subject.memberOf(adminRole);
+    subject.rights.allow('/personal', Flags.READ);
+
+    const json = subject.toJSON();
+    expect(json.roles).toContain('admin');
+    expect(json.rights).toHaveLength(1);
+
+    const restored = Subject.fromJSON(json, registry);
+    expect(restored.has('/admin', Flags.READ)).toBe(true);
+    expect(restored.has('/personal', Flags.READ)).toBe(true);
+  });
 });
 
 describe('RoleRegistry', () => {
@@ -79,6 +97,36 @@ describe('RoleRegistry', () => {
 
     const sub = new Subject().memberOf(loadedAdmin!);
     expect(sub.all('/')).toBe(true);
+  });
+
+  it('invalidates child role cache when parent changes', () => {
+    const parent = new Role('parent');
+    const child = new Role('child');
+    child.inheritsFrom(parent);
+
+    // Trigger cache
+    expect(child.allRights()).toHaveLength(0);
+
+    parent.rights.allow('/shared', Flags.READ);
+
+    // Now child should have the new right
+    const all = child.allRights();
+    expect(all).toHaveLength(1);
+    expect(all[0]!.right.path).toBe('/shared');
+  });
+
+  it('throws error when parent role is missing', () => {
+    const data = [
+      {
+        name: 'child',
+        inherits: ['parent'],
+        rights: []
+      }
+    ];
+
+    expect(() => RoleRegistry.fromJSON(data as any)).toThrow(
+      /inherits from missing role parent/
+    );
   });
 });
 

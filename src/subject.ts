@@ -1,7 +1,13 @@
 import { Flags } from './constants';
 import { Right, type ConditionContext } from './right';
-import { Rights } from './rights';
+import { Rights, type RightJSON } from './rights';
 import { Role } from './role';
+import type { RoleRegistry } from './role-registry';
+
+export type SubjectJSON = {
+  rights?: RightJSON[];
+  roles?: string[];
+};
 
 export class Subject {
   private roles: Role[] = [];
@@ -11,6 +17,37 @@ export class Subject {
     Right,
     { name?: string; type: 'direct' | 'role' }
   > | null = null;
+
+  toJSON(): SubjectJSON {
+    const out: SubjectJSON = {};
+    if (this.roles.length > 0) {
+      out.roles = this.roles.map(r => r.name);
+    }
+    const rights = this.rights.toJSON();
+    if (rights.length > 0) {
+      out.rights = rights;
+    }
+    return out;
+  }
+
+  static fromJSON(data: SubjectJSON, registry?: RoleRegistry): Subject {
+    const subject = new Subject();
+    if (data.roles && registry) {
+      for (const roleName of data.roles) {
+        const role = registry.get(roleName);
+        if (role) {
+          subject.memberOf(role);
+        }
+      }
+    }
+    if (data.rights) {
+      const rights = Rights.fromJSON(data.rights);
+      for (const r of rights.allRights()) {
+        subject.rights.add(r);
+      }
+    }
+    return subject;
+  }
 
   memberOf(role: Role): this {
     if (!this.roles.includes(role)) {
