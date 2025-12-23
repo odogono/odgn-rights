@@ -55,7 +55,7 @@ describe('Rights matching & precedence', () => {
       true
     );
 
-    expect(rights.toString()).toBe('+r:/, +c:/*/device/**');
+    expect(rights.toString()).toBe('+r:/, -r+c:/*/device/**');
   });
 });
 

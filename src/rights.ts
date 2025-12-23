@@ -1,12 +1,14 @@
 import { ALL_BITS, Flags, hasBit } from './constants';
 import { Right, type ConditionContext } from './right';
-import { lettersFromMask, normalizePath } from './utils';
+import { normalizePath } from './utils';
 
 export type RightJSON = {
   allow: string;
   deny?: string;
   description?: string;
   path: string;
+  validFrom?: string;
+  validUntil?: string;
 };
 
 export class Rights {
@@ -26,6 +28,16 @@ export class Rights {
     this.list.push(right);
     this.matchCache.clear();
     this.notify();
+    return this;
+  }
+
+  prune(now: Date = new Date()): this {
+    const originalCount = this.list.length;
+    this.list = this.list.filter(r => !r.isExpired(now));
+    if (this.list.length !== originalCount) {
+      this.matchCache.clear();
+      this.notify();
+    }
     return this;
   }
 
@@ -136,8 +148,12 @@ export class Rights {
     bit: Flags,
     context?: ConditionContext
   ): { allowed: boolean; right?: Right } {
+    const now = getNow(context);
     const matches = this.matchOrdered(normalizePath(path));
     for (const r of matches) {
+      if (!r.isValidAt(now)) {
+        continue;
+      }
       if (r.condition && !r.condition(context)) {
         continue;
       }
@@ -172,9 +188,7 @@ export class Rights {
   }
 
   toString(): string {
-    return this.list
-      .map(r => `+${lettersFromMask(r.allowMaskValue)}:${r.path}`)
-      .join(', ');
+    return this.list.map(r => r.toString()).join(', ');
   }
 
   toJSON(): RightJSON[] {
@@ -185,7 +199,20 @@ export class Rights {
     const rights = new Rights();
     for (const item of arr) {
       const p = normalizePath(item.path);
-      const r = new Right(p, { description: item.description });
+      const init: any = { description: item.description };
+      if (item.validFrom) {
+        const d = new Date(item.validFrom);
+        if (!isNaN(d.getTime())) {
+          init.validFrom = d;
+        }
+      }
+      if (item.validUntil) {
+        const d = new Date(item.validUntil);
+        if (!isNaN(d.getTime())) {
+          init.validUntil = d;
+        }
+      }
+      const r = new Right(p, init);
       const allowStr = item.allow;
       const denyStr = item.deny;
 
@@ -247,4 +274,16 @@ export class Rights {
   format(separator = ', '): string {
     return this.list.map(r => r.toString()).join(separator);
   }
+}
+
+function getNow(context?: ConditionContext): Date {
+  if (
+    context &&
+    typeof context === 'object' &&
+    '_now' in context &&
+    (context as any)._now instanceof Date
+  ) {
+    return (context as any)._now;
+  }
+  return new Date();
 }

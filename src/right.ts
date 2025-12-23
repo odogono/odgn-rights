@@ -9,6 +9,8 @@ export type RightInit = {
   condition?: Condition;
   deny?: Flags[];
   description?: string;
+  validFrom?: Date;
+  validUntil?: Date;
 };
 
 export class Right {
@@ -17,6 +19,8 @@ export class Right {
   private denyMask = 0;
   readonly description?: string;
   readonly condition?: Condition;
+  readonly validFrom?: Date;
+  readonly validUntil?: Date;
   private readonly _specificity: number;
   private readonly _re?: RegExp;
 
@@ -24,6 +28,13 @@ export class Right {
     this.path = normalizePath(path);
     this.description = init?.description;
     this.condition = init?.condition;
+    this.validFrom = init?.validFrom;
+    this.validUntil = init?.validUntil;
+
+    if (this.validFrom && this.validUntil && this.validFrom > this.validUntil) {
+      throw new Error('validFrom must be before validUntil');
+    }
+
     this._specificity = this.calculateSpecificity();
     if (this.path.includes('*') || this.path.includes('?')) {
       this._re = Right.globToRegExp(this.path);
@@ -56,7 +67,14 @@ export class Right {
     return this;
   }
 
-  has(flag: Flags): boolean {
+  has(flag: Flags, now: Date = new Date()): boolean {
+    if (this.validFrom && now < this.validFrom) {
+      return false;
+    }
+    if (this.validUntil && now > this.validUntil) {
+      return false;
+    }
+
     // For composite masks, require all bits
     let remaining = flag;
     for (const bit of ALL_BITS) {
@@ -72,6 +90,20 @@ export class Right {
       remaining &= ~bit;
     }
     return true;
+  }
+
+  isValidAt(now: Date = new Date()): boolean {
+    if (this.validFrom && now < this.validFrom) {
+      return false;
+    }
+    if (this.validUntil && now > this.validUntil) {
+      return false;
+    }
+    return true;
+  }
+
+  isExpired(now: Date = new Date()): boolean {
+    return this.validUntil !== undefined && now > this.validUntil;
   }
 
   get allowMaskValue(): number {
@@ -93,7 +125,15 @@ export class Right {
       parts.push(`+${allowLetters}`);
     }
     const left = parts.join('');
-    return `${left}:${this.path}`;
+    let res = `${left}:${this.path}`;
+
+    if (this.validFrom || this.validUntil) {
+      const from = this.validFrom ? this.validFrom.toISOString() : '*';
+      const until = this.validUntil ? this.validUntil.toISOString() : '*';
+      res += `@${from}/${until}`;
+    }
+
+    return res;
   }
 
   toJSON(): {
@@ -101,6 +141,8 @@ export class Right {
     deny?: string;
     description?: string;
     path: string;
+    validFrom?: string;
+    validUntil?: string;
   } {
     const allow = lettersFromMask(this.allowMask);
     const deny = lettersFromMask(this.denyMask);
@@ -109,6 +151,8 @@ export class Right {
       deny?: string;
       description?: string;
       path: string;
+      validFrom?: string;
+      validUntil?: string;
     } = {
       allow,
       path: this.path
@@ -118,6 +162,12 @@ export class Right {
     }
     if (this.description) {
       out.description = this.description;
+    }
+    if (this.validFrom) {
+      out.validFrom = this.validFrom.toISOString();
+    }
+    if (this.validUntil) {
+      out.validUntil = this.validUntil.toISOString();
     }
     return out;
   }
@@ -185,25 +235,71 @@ export class Right {
 
   static parse(input: string): Right {
     const s = input.trim();
-    const idx = s.indexOf(':');
-    if (idx === -1) {
-      return new Right(s);
+    const colonIdx = s.indexOf(':');
+    const atIdx = s.lastIndexOf('@');
+
+    let flagsStr = '';
+    let pathStr = '';
+    let timeStr = '';
+
+    if (colonIdx === -1) {
+      if (atIdx === -1) {
+        pathStr = s;
+      } else {
+        pathStr = s.slice(0, atIdx);
+        timeStr = s.slice(atIdx + 1);
+      }
+    } else {
+      flagsStr = s.slice(0, colonIdx);
+      if (atIdx === -1 || atIdx < colonIdx) {
+        pathStr = s.slice(colonIdx + 1);
+      } else {
+        pathStr = s.slice(colonIdx + 1, atIdx);
+        timeStr = s.slice(atIdx + 1);
+      }
     }
-    const groups = s.slice(0, idx);
-    const path = s.slice(idx + 1);
-    const r = new Right(path);
+
+    const init: RightInit = {};
+    if (timeStr) {
+      const parts = timeStr.split('/');
+      const from = parts[0];
+      const until = parts[1];
+      if (from && from !== '*') {
+        const d = new Date(from);
+        if (!isNaN(d.getTime())) {
+          init.validFrom = d;
+        }
+      }
+      if (until && until !== '*') {
+        const d = new Date(until);
+        if (!isNaN(d.getTime())) {
+          init.validUntil = d;
+        }
+      }
+    }
+
+    const r = new Right(pathStr, init);
+
+    if (!flagsStr) {
+      return r;
+    }
+
     // parse groups like '-abc+xyz' or '+xyz-abc'
     let i = 0;
-    while (i < groups.length) {
-      const sign = groups[i];
+    while (i < flagsStr.length) {
+      const sign = flagsStr[i];
       if (sign !== '+' && sign !== '-') {
         i++;
         continue;
       }
       i++;
       let letters = '';
-      while (i < groups.length && groups[i] !== '+' && groups[i] !== '-') {
-        letters += groups[i];
+      while (
+        i < flagsStr.length &&
+        flagsStr[i] !== '+' &&
+        flagsStr[i] !== '-'
+      ) {
+        letters += flagsStr[i];
         i++;
       }
       const apply =
