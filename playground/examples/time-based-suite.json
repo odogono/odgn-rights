@@ -1,0 +1,26 @@
+{
+  "name": "Time-Based Access Suite",
+  "description": "Tests for temporary access and scheduled permissions.",
+  "createdAt": "2025-12-24T10:05:00Z",
+  "updatedAt": "2025-12-24T10:05:00Z",
+  "tests": [
+    {
+      "id": "time-1",
+      "description": "Access allowed during validity window",
+      "path": "/seasonal/promo",
+      "flags": 1,
+      "expected": true,
+      "simulatedTime": "2025-12-25T12:00:00Z",
+      "tags": ["time-based"]
+    },
+    {
+      "id": "time-2",
+      "description": "Access denied after validity window",
+      "path": "/seasonal/promo",
+      "flags": 1,
+      "expected": false,
+      "simulatedTime": "2026-01-02T00:00:00Z",
+      "tags": ["time-based"]
+    }
+  ]
+}

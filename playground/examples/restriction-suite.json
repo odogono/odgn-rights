@@ -1,0 +1,29 @@
+{
+  "name": "Restriction Suite",
+  "description": "Tests for deny rules overriding allow rules.",
+  "createdAt": "2025-12-24T10:10:00Z",
+  "updatedAt": "2025-12-24T10:10:00Z",
+  "tests": [
+    {
+      "id": "deny-1",
+      "description": "General access allowed",
+      "path": "/reports/sales",
+      "flags": 1,
+      "expected": true
+    },
+    {
+      "id": "deny-2",
+      "description": "Specific sensitive path restricted",
+      "path": "/reports/salary",
+      "flags": 1,
+      "expected": false
+    },
+    {
+      "id": "deny-3",
+      "description": "Sub-path of restricted path also restricted",
+      "path": "/reports/salary/admin",
+      "flags": 1,
+      "expected": false
+    }
+  ]
+}

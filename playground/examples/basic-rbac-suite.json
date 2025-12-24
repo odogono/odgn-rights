@@ -1,0 +1,40 @@
+{
+  "name": "Basic RBAC Suite",
+  "description": "Validation for standard user, editor, and admin roles.",
+  "createdAt": "2025-12-24T10:00:00Z",
+  "updatedAt": "2025-12-24T10:00:00Z",
+  "tests": [
+    {
+      "id": "test-1",
+      "description": "User can read public content",
+      "path": "/public/articles/intro",
+      "flags": 1,
+      "expected": true,
+      "tags": ["user", "read"]
+    },
+    {
+      "id": "test-2",
+      "description": "User cannot write to public content",
+      "path": "/public/articles/intro",
+      "flags": 2,
+      "expected": false,
+      "tags": ["user", "write"]
+    },
+    {
+      "id": "test-3",
+      "description": "Editor can read and write to content",
+      "path": "/content/drafts/new-post",
+      "flags": 3,
+      "expected": true,
+      "tags": ["editor", "read", "write"]
+    },
+    {
+      "id": "test-4",
+      "description": "Admin has full access to system",
+      "path": "/system/settings",
+      "flags": 31,
+      "expected": true,
+      "tags": ["admin", "full-access"]
+    }
+  ]
+}

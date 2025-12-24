@@ -1,8 +1,7 @@
 import { useAtom, useAtomValue } from 'jotai';
 import { useMemo, useState } from 'react';
 
-import { Flags } from '@/index';
-
+import { FLAG_OPTIONS, getFlagName, getFlagSummary } from '../helpers/flags';
 import {
   configAtom,
   testFlagsAtom,
@@ -13,14 +12,6 @@ import {
   type TestHistoryEntry
 } from '../store/atoms';
 import { TimeSimulator } from './time-simulator';
-
-const FLAG_OPTIONS = [
-  { flag: Flags.READ, key: 'r', label: 'Read' },
-  { flag: Flags.WRITE, key: 'w', label: 'Write' },
-  { flag: Flags.CREATE, key: 'c', label: 'Create' },
-  { flag: Flags.DELETE, key: 'd', label: 'Delete' },
-  { flag: Flags.EXECUTE, key: 'x', label: 'Execute' }
-];
 
 export const TesterPanel = () => {
   const [path, setPath] = useAtom(testPathAtom);
@@ -209,26 +200,6 @@ export const TesterPanel = () => {
   );
 };
 
-const getFlagSummary = (flags: number): string => {
-  const res = [];
-  if (flags & Flags.READ) {
-    res.push('R');
-  }
-  if (flags & Flags.WRITE) {
-    res.push('W');
-  }
-  if (flags & Flags.CREATE) {
-    res.push('C');
-  }
-  if (flags & Flags.DELETE) {
-    res.push('D');
-  }
-  if (flags & Flags.EXECUTE) {
-    res.push('X');
-  }
-  return res.join('');
-};
-
 const TestResultDisplay = ({ result }: { result: ExplainResult }) => (
   <div className={`test-result ${result.allowed ? 'allowed' : 'denied'}`}>
     <div
@@ -258,20 +229,3 @@ const TestResultDisplay = ({ result }: { result: ExplainResult }) => (
     </div>
   </div>
 );
-
-const getFlagName = (bit: number): string => {
-  switch (bit) {
-    case Flags.READ:
-      return 'READ';
-    case Flags.WRITE:
-      return 'WRITE';
-    case Flags.CREATE:
-      return 'CREATE';
-    case Flags.DELETE:
-      return 'DELETE';
-    case Flags.EXECUTE:
-      return 'EXECUTE';
-    default:
-      return bit.toString();
-  }
-};
