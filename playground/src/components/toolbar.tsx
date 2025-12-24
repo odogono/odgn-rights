@@ -46,7 +46,15 @@ export const Toolbar = () => {
         </button>
       </div>
 
-      <div className="toolbar-right">
+      <div className="toolbar-right" style={{ display: 'flex', gap: '8px' }}>
+        <button
+          onClick={() => {
+            navigator.clipboard.writeText(window.location.href);
+            alert('URL copied to clipboard!');
+          }}
+        >
+          Share URL
+        </button>
         <button
           onClick={() => {
             const config = JSON.stringify(

@@ -1,8 +1,10 @@
 import { useAtom, useAtomValue } from 'jotai';
+import { useMemo, useState } from 'react';
 
 import { Flags } from '@/index';
 
 import {
+  configAtom,
   testFlagsAtom,
   testHistoryAtom,
   testPathAtom,
@@ -10,6 +12,7 @@ import {
   type ExplainResult,
   type TestHistoryEntry
 } from '../store/atoms';
+import { TimeSimulator } from './time-simulator';
 
 const FLAG_OPTIONS = [
   { flag: Flags.READ, key: 'r', label: 'Read' },
@@ -23,7 +26,9 @@ export const TesterPanel = () => {
   const [path, setPath] = useAtom(testPathAtom);
   const [flags, setFlags] = useAtom(testFlagsAtom);
   const result = useAtomValue(testResultAtom);
-  const [, setHistory] = useAtom(testHistoryAtom);
+  const [history, setHistory] = useAtom(testHistoryAtom);
+  const config = useAtomValue(configAtom);
+  const [showHistory, setShowHistory] = useState(true);
 
   const toggleFlag = (flag: number) => {
     setFlags(current => current ^ flag);
@@ -44,6 +49,24 @@ export const TesterPanel = () => {
     setHistory(prev => [entry, ...prev].slice(0, 20));
   };
 
+  // Extract paths for autocomplete
+  const suggestedPaths = useMemo(() => {
+    const paths = new Set<string>();
+    config.roles.forEach(role => {
+      role.rights?.forEach(right => {
+        if (typeof right === 'string') return;
+        if (right.path)
+          paths.add(right.path.replace(/\/\*\*$/, '').replace(/\/\*$/, ''));
+      });
+    });
+    config.subject.rights?.forEach(right => {
+      if (typeof right === 'string') return;
+      if (right.path)
+        paths.add(right.path.replace(/\/\*\*$/, '').replace(/\/\*$/, ''));
+    });
+    return Array.from(paths).sort();
+  }, [config]);
+
   return (
     <section className="panel tester-panel">
       <header className="panel-header">
@@ -55,12 +78,18 @@ export const TesterPanel = () => {
           <label>
             Path:
             <input
+              list="path-suggestions"
               onChange={e => setPath(e.target.value)}
               placeholder="/path/to/resource"
               style={{ marginTop: '4px', width: '100%' }}
               type="text"
               value={path}
             />
+            <datalist id="path-suggestions">
+              {suggestedPaths.map(p => (
+                <option key={p} value={p} />
+              ))}
+            </datalist>
           </label>
 
           <div className="flag-toggles">
@@ -83,9 +112,100 @@ export const TesterPanel = () => {
         </div>
 
         {result && <TestResultDisplay result={result} />}
+
+        <TimeSimulator />
+
+        <div className="test-history" style={{ marginTop: '1rem' }}>
+          <header
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '8px'
+            }}
+          >
+            <h3>History</h3>
+            <button
+              onClick={() => setShowHistory(!showHistory)}
+              style={{ fontSize: '0.8rem', padding: '2px 8px' }}
+            >
+              {showHistory ? 'Hide' : 'Show'}
+            </button>
+          </header>
+
+          {showHistory && history.length > 0 && (
+            <ul
+              style={{
+                listStyle: 'none',
+                padding: 0,
+                margin: 0,
+                fontSize: '0.85rem',
+                maxHeight: '200px',
+                overflowY: 'auto',
+                border: '1px solid #eee',
+                borderRadius: '4px'
+              }}
+            >
+              {history.map(entry => (
+                <li
+                  key={entry.id}
+                  onClick={() => {
+                    setPath(entry.path);
+                    setFlags(entry.flags);
+                  }}
+                  style={{
+                    padding: '4px 8px',
+                    borderBottom: '1px solid #eee',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    backgroundColor: entry.allowed
+                      ? 'rgba(0, 255, 0, 0.05)'
+                      : 'rgba(255, 0, 0, 0.05)'
+                  }}
+                >
+                  <span
+                    style={{
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    {entry.allowed ? '✓' : '✗'} {entry.path}
+                  </span>
+                  <span style={{ opacity: 0.5, fontSize: '0.75rem' }}>
+                    {getFlagSummary(entry.flags)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {showHistory && history.length === 0 && (
+            <div
+              style={{
+                opacity: 0.5,
+                fontSize: '0.85rem',
+                textAlign: 'center',
+                padding: '1rem'
+              }}
+            >
+              No history yet
+            </div>
+          )}
+        </div>
       </div>
     </section>
   );
+};
+
+const getFlagSummary = (flags: number): string => {
+  const res = [];
+  if (flags & Flags.READ) res.push('R');
+  if (flags & Flags.WRITE) res.push('W');
+  if (flags & Flags.CREATE) res.push('C');
+  if (flags & Flags.DELETE) res.push('D');
+  if (flags & Flags.EXECUTE) res.push('X');
+  return res.join('');
 };
 
 const TestResultDisplay = ({ result }: { result: ExplainResult }) => (
