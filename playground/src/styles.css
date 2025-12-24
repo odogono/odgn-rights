@@ -9,6 +9,12 @@
   --success-color: #89d185;
 }
 
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 body,
 html,
 #root {
@@ -52,11 +58,167 @@ html,
 }
 
 .panels-container {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display: flex;
   gap: 16px;
   height: 100%;
   min-height: 0;
+}
+
+.side-column {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 300px;
+}
+
+.center-column {
+  flex: 1.5;
+  display: flex;
+  flex-direction: column;
+  min-width: 400px;
+}
+
+/* Hierarchy Panel */
+.tree-view {
+  flex: 1;
+  overflow: auto;
+  padding: 8px;
+}
+
+.tree-node-label {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px;
+  cursor: pointer;
+  border-radius: 4px;
+  gap: 4px;
+}
+
+.tree-node-label:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.tree-node-label.selected {
+  background-color: var(--accent-color);
+  color: white;
+}
+
+.expand-toggle {
+  background: none;
+  border: none;
+  padding: 0;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: inherit;
+  opacity: 0.7;
+}
+
+.node-type-subject {
+  color: #569cd6;
+  font-weight: bold;
+}
+.node-type-role {
+  color: #4ec9b0;
+}
+.node-type-right {
+  color: #ce9178;
+  font-family: monospace;
+}
+
+.aggregated-rights {
+  border-top: 1px solid var(--border-color);
+  padding: 16px;
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.aggregated-rights h3 {
+  margin: 0 0 12px 0;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.8;
+  color: var(--text-color);
+}
+
+.rights-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.right-item {
+  display: flex;
+  align-items: center;
+  font-family: monospace;
+  font-size: 0.9rem;
+  padding: 4px 8px;
+  background-color: rgba(255, 255, 255, 0.03);
+  border-radius: 4px;
+}
+
+.right-str {
+  color: #ce9178;
+}
+
+.source {
+  font-size: 0.75rem;
+  opacity: 0.5;
+  margin-left: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-family: sans-serif;
+}
+
+.specificity {
+  margin-left: auto;
+  font-size: 0.8rem;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 2px 6px;
+  border-radius: 10px;
+  opacity: 0.6;
+}
+
+/* Pattern Sandbox */
+.sandbox-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.input-group label {
+  font-size: 0.85rem;
+  opacity: 0.8;
+}
+
+.match-result {
+  margin-top: 8px;
+  padding: 8px;
+  border-radius: 4px;
+  text-align: center;
+  font-weight: bold;
+}
+
+.match-result.matches {
+  background-color: rgba(137, 209, 133, 0.2);
+  color: var(--success-color);
+}
+
+.match-result.no-match {
+  background-color: rgba(244, 135, 113, 0.2);
+  color: var(--error-color);
 }
 
 .panel {
@@ -66,6 +228,8 @@ html,
   flex-direction: column;
   border-radius: 4px;
   overflow: hidden;
+  flex: 1;
+  min-height: 0;
 }
 
 .panel-header {
@@ -99,7 +263,32 @@ html,
   align-items: center;
 }
 
-textarea {
+.editor-panel-content {
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  padding: 0;
+  overflow: hidden;
+  background-color: #1e1e1e;
+  min-height: 0;
+}
+
+.line-numbers {
+  padding: 8px 4px;
+  background-color: #2c2c2c;
+  color: #858585;
+  text-align: right;
+  min-width: 35px;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 14px;
+  line-height: 1.5;
+  user-select: none;
+  border-right: 1px solid var(--border-color);
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+textarea.editor-textarea {
   flex: 1;
   background-color: #1e1e1e;
   color: #d4d4d4;
@@ -107,8 +296,14 @@ textarea {
   resize: none;
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
   font-size: 14px;
+  line-height: 1.5;
   padding: 8px;
   outline: none;
+  height: 100%;
+  width: 100%;
+  min-width: 0;
+  white-space: pre;
+  overflow: auto;
 }
 
 input[type='text'] {
@@ -139,6 +334,13 @@ button:disabled {
 }
 .success {
   color: var(--success-color);
+}
+
+.empty-msg {
+  opacity: 0.5;
+  font-style: italic;
+  font-size: 0.9rem;
+  padding: 8px 0;
 }
 
 .test-inputs {

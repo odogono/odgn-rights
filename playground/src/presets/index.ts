@@ -60,5 +60,97 @@ export const PRESETS: Record<string, Preset> = {
     },
     description: 'Rights with validity windows',
     name: 'Time-Based Rights'
+  },
+  'complex-hierarchy': {
+    config: {
+      roles: [
+        {
+          name: 'base-employee',
+          rights: [
+            { allow: 'r', path: '/company/announcements' },
+            { allow: 'r', path: '/company/cafeteria' }
+          ]
+        },
+        {
+          inherits: ['base-employee'],
+          name: 'engineer',
+          rights: [
+            { allow: 'rw', path: '/code/**' },
+            { allow: 'r', path: '/docs/**' }
+          ]
+        },
+        {
+          inherits: ['engineer'],
+          name: 'lead-engineer',
+          rights: [
+            { allow: 'rwcxd', path: '/code/main/**' },
+            { allow: 'rw', path: '/infrastructure/**' }
+          ]
+        },
+        {
+          inherits: ['base-employee'],
+          name: 'hr',
+          rights: [
+            { allow: 'rwc', path: '/people/**' },
+            { allow: '', deny: '*', path: '/code/**' }
+          ]
+        }
+      ],
+      subject: { roles: ['lead-engineer', 'hr'] }
+    },
+    description:
+      'Multiple inheritance and mixed roles showing specificity and conflict resolution',
+    name: 'Complex Hierarchy'
+  },
+  'fine-grained-resource': {
+    config: {
+      roles: [
+        {
+          name: 'manager',
+          rights: [
+            { allow: 'r', path: '/org/projects/**' },
+            { allow: 'rw', path: '/org/projects/active/**' },
+            { allow: 'rwcxd', path: '/org/projects/active/my-project/**' },
+            {
+              allow: '',
+              deny: 'd',
+              path: '/org/projects/active/my-project/core-files'
+            }
+          ]
+        }
+      ],
+      subject: {
+        roles: ['manager'],
+        rights: [
+          { allow: 'd', path: '/org/projects/active/my-project/core-files' }
+        ]
+      }
+    },
+    description: 'Path specificity nested deep with direct subject overrides',
+    name: 'Fine-Grained Resources'
+  },
+  'tagged-rights': {
+    config: {
+      roles: [
+        {
+          name: 'auditor',
+          rights: [
+            { allow: 'r', path: '/**', tags: ['audit', 'read-only'] },
+            { allow: 'r', path: '/logs/**', tags: ['audit', 'critical'] }
+          ]
+        },
+        {
+          name: 'operator',
+          rights: [
+            { allow: 'x', path: '/scripts/**', tags: ['ops'] },
+            { allow: 'rw', path: '/temp/**', tags: ['ops', 'transient'] }
+          ]
+        }
+      ],
+      subject: { roles: ['auditor', 'operator'] }
+    },
+    description:
+      'Using tags to categorize and manage rights across different roles',
+    name: 'Tagged Rights'
   }
 };

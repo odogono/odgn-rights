@@ -1,5 +1,5 @@
 import { useAtom, useAtomValue } from 'jotai';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 import { Rights } from '@/index';
 
@@ -16,6 +16,19 @@ export const EditorPanel = () => {
   const [format, setFormat] = useAtom(editorFormatAtom);
   const error = useAtomValue(validationErrorAtom);
   const [config, setConfig] = useAtom(configWithHistoryAtom);
+
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const lineNumbersRef = useRef<HTMLDivElement>(null);
+
+  const handleScroll = () => {
+    if (textareaRef.current && lineNumbersRef.current) {
+      lineNumbersRef.current.scrollTop = textareaRef.current.scrollTop;
+    }
+  };
+
+  useEffect(() => {
+    handleScroll();
+  }, [content]);
 
   // Sync editor content when config changes (e.g. from preset or undo/redo)
   useEffect(() => {
@@ -61,10 +74,17 @@ export const EditorPanel = () => {
         </select>
       </header>
 
-      <div className="panel-content">
+      <div className="editor-panel-content">
+        <div className="line-numbers" ref={lineNumbersRef}>
+          {content.split('\n').map((_, i) => (
+            <div key={i}>{i + 1}</div>
+          ))}
+        </div>
         <textarea
-          className={error ? 'has-error' : ''}
+          ref={textareaRef}
+          className={`editor-textarea ${error ? 'has-error' : ''}`}
           onChange={e => setContent(e.target.value)}
+          onScroll={handleScroll}
           placeholder={
             format === 'json'
               ? 'Enter JSON config...'
@@ -72,6 +92,7 @@ export const EditorPanel = () => {
           }
           spellCheck={false}
           value={content}
+          wrap="off"
         />
       </div>
 

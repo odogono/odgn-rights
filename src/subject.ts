@@ -10,7 +10,7 @@ export type SubjectJSON = {
 };
 
 export class Subject {
-  private roles: Role[] = [];
+  readonly roles: Role[] = [];
   readonly rights: Rights = new Rights();
   private _aggregate: Rights | null = null;
   private _aggregateMeta: Map<
@@ -79,6 +79,32 @@ export class Subject {
       source?: { name?: string; type: 'direct' | 'role' };
     }>;
   } {
+    const { rights, meta } = this.ensureAggregate();
+    const res = rights.explain(path, flag, context);
+    return {
+      allowed: res.allowed,
+      details: res.details.map(d => ({
+        ...d,
+        source: d.right ? meta.get(d.right) : undefined
+      }))
+    };
+  }
+
+  allRights(): Array<{
+    right: Right;
+    source?: { name?: string; type: 'direct' | 'role' };
+  }> {
+    const { rights, meta } = this.ensureAggregate();
+    return rights.allRights().map(right => ({
+      right,
+      source: meta.get(right)
+    }));
+  }
+
+  private ensureAggregate(): {
+    rights: Rights;
+    meta: Map<Right, { name?: string; type: 'direct' | 'role' }>;
+  } {
     if (!this._aggregate) {
       this._aggregate = new Rights();
       this._aggregateMeta = new Map<
@@ -102,15 +128,7 @@ export class Subject {
         this._aggregateMeta.set(r, { type: 'direct' });
       }
     }
-
-    const res = this._aggregate.explain(path, flag, context);
-    return {
-      allowed: res.allowed,
-      details: res.details.map(d => ({
-        ...d,
-        source: d.right ? this._aggregateMeta!.get(d.right) : undefined
-      }))
-    };
+    return { rights: this._aggregate, meta: this._aggregateMeta! };
   }
 
   // Convenience helpers

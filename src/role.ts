@@ -5,7 +5,7 @@ import type { RoleJSON } from './role-registry';
 export class Role {
   readonly name: string;
   readonly rights: Rights;
-  private parents: Role[] = [];
+  readonly parents: Role[] = [];
   private children: Role[] = [];
   private _cachedAllRights: Array<{
     right: Right;
