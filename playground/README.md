@@ -14,15 +14,17 @@ bun playground
 
 Then open [http://localhost:3000](http://localhost:3000) in your browser.
 
-### Building
+### Testing
 
-Build a standalone, single-file HTML version of the playground:
+The playground includes End-to-End tests using Playwright.
 
 ```bash
-bun playground:build
-```
+# Run all e2e tests
+bun run test:e2e
 
-The output will be at `dist/playground.html`.
+# Run tests in UI mode
+bun run test:e2e:ui
+```
 
 ## Features (Phase 1)
 
