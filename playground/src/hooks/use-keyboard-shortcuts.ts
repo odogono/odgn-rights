@@ -6,7 +6,7 @@ import { Flags } from '@/index';
 import { testFlagsAtom } from '../store/atoms';
 import { redoAtom, undoAtom } from '../store/history';
 
-export function useKeyboardShortcuts() {
+export const useKeyboardShortcuts = () => {
   const undo = useSetAtom(undoAtom);
   const redo = useSetAtom(redoAtom);
   const setFlags = useSetAtom(testFlagsAtom);
@@ -53,4 +53,4 @@ export function useKeyboardShortcuts() {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [undo, redo, setFlags]);
-}
+};

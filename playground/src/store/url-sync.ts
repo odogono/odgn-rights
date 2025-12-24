@@ -8,28 +8,28 @@ import {
   type PlaygroundConfig
 } from './atoms';
 
-interface URLState {
+type URLState = {
   config: PlaygroundConfig;
   format: 'json' | 'string';
   simulatedTime?: string;
-}
+};
 
-function encodeState(state: URLState): string {
+const encodeState = (state: URLState): string => {
   const json = JSON.stringify(state);
   // Use native compression if available, fallback to uncompressed
   const encoded = btoa(unescape(encodeURIComponent(json)));
-  return encoded.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
+  return encoded.replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '');
+};
 
-function decodeState(hash: string): URLState | null {
+const decodeState = (hash: string): URLState | null => {
   try {
-    const base64 = hash.replace(/-/g, '+').replace(/_/g, '/');
+    const base64 = hash.replaceAll('-', '+').replaceAll('_', '/');
     const json = decodeURIComponent(escape(atob(base64)));
     return JSON.parse(json);
   } catch {
     return null;
   }
-}
+};
 
 // Atom that syncs to URL
 export const urlStateAtom = atom(
@@ -58,7 +58,7 @@ export const urlStateAtom = atom(
 );
 
 // Hook to sync URL on state changes
-export function useURLSync() {
+export const useURLSync = () => {
   const state = useAtomValue(urlStateAtom);
   const setURLState = useSetAtom(urlStateAtom);
 
@@ -83,4 +83,4 @@ export function useURLSync() {
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, [setURLState]);
-}
+};

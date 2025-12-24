@@ -2,21 +2,23 @@ import { useMemo, useState } from 'react';
 
 import { Right } from '@/index';
 
-export function PatternSandbox() {
-  const [pattern, setPattern] = useState('**/*.ts');
-  const [path, setPath] = useState('src/index.ts');
+export const PatternSandbox = () => {
+  const [pattern, setPattern] = useState('/org/open/device/**/description');
+  const [path, setPath] = useState(
+    '/org/open/device/product/example/device/description'
+  );
 
   const result = useMemo(() => {
     try {
       const r = new Right(pattern);
       return {
-        matches: r.matches(path),
-        error: null
+        error: null,
+        matches: r.matches(path)
       };
-    } catch (e) {
+    } catch (error) {
       return {
-        matches: false,
-        error: (e as Error).message
+        error: (error as Error).message,
+        matches: false
       };
     }
   }, [pattern, path]);
@@ -31,23 +33,24 @@ export function PatternSandbox() {
           <label htmlFor="pattern-input">Pattern:</label>
           <input
             id="pattern-input"
-            type="text"
-            value={pattern}
             onChange={e => setPattern(e.target.value)}
             placeholder="e.g. /public/**"
+            type="text"
+            value={pattern}
           />
         </div>
         <div className="input-group">
           <label htmlFor="path-input">Test Path:</label>
           <input
             id="path-input"
-            type="text"
-            value={path}
             onChange={e => setPath(e.target.value)}
             placeholder="e.g. /public/images/logo.png"
+            type="text"
+            value={path}
           />
         </div>
         <div
+          aria-live="polite"
           className={`match-result ${result.matches ? 'matches' : 'no-match'}`}
         >
           {result.error ? (
@@ -61,4 +64,4 @@ export function PatternSandbox() {
       </div>
     </section>
   );
-}
+};

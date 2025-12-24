@@ -2,14 +2,14 @@ import { useAtom } from 'jotai';
 
 import { simulatedTimeAtom } from '../store/atoms';
 
+const pad = (n: number) => n.toString().padStart(2, '0');
+
+const formatTime = (d: Date) =>
+  `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+
 export const TimeSimulator = () => {
   const [time, setTime] = useAtom(simulatedTimeAtom);
   const isLive = time === null;
-
-  const formatTime = (d: Date) => {
-    const pad = (n: number) => n.toString().padStart(2, '0');
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  };
 
   const handleTimeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.value) {
@@ -29,18 +29,18 @@ export const TimeSimulator = () => {
     <div
       className="time-simulator"
       style={{
-        marginTop: '1rem',
-        padding: '0.5rem',
         border: '1px solid #ccc',
-        borderRadius: '4px'
+        borderRadius: '4px',
+        marginTop: '1rem',
+        padding: '0.5rem'
       }}
     >
       <label
         style={{
-          display: 'flex',
           alignItems: 'center',
-          gap: '8px',
-          cursor: 'pointer'
+          cursor: 'pointer',
+          display: 'flex',
+          gap: '8px'
         }}
       >
         <input
@@ -54,17 +54,21 @@ export const TimeSimulator = () => {
       {!isLive && (
         <div
           style={{
-            marginTop: '8px',
             display: 'flex',
             flexDirection: 'column',
-            gap: '8px'
+            gap: '8px',
+            marginTop: '8px'
           }}
         >
+          <label className="sr-only" htmlFor="simulated-time">
+            Select simulated time:
+          </label>
           <input
+            id="simulated-time"
             onChange={handleTimeChange}
+            style={{ padding: '4px', width: '100%' }}
             type="datetime-local"
             value={formatTime(time!)}
-            style={{ padding: '4px', width: '100%' }}
           />
 
           <div

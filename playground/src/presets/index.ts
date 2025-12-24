@@ -28,39 +28,6 @@ export const PRESETS: Record<string, Preset> = {
     description: 'Simple role-based access control',
     name: 'Basic RBAC'
   },
-  'deny-override': {
-    config: {
-      roles: [
-        {
-          name: 'restricted-admin',
-          rights: [
-            { allow: '*', path: '/**' },
-            { allow: '', deny: '*', path: '/system/**' }
-          ]
-        }
-      ],
-      subject: { roles: ['restricted-admin'] }
-    },
-    description: 'Demonstrating deny rules overriding allow',
-    name: 'Deny Override'
-  },
-  'time-based': {
-    config: {
-      roles: [],
-      subject: {
-        rights: [
-          {
-            allow: '*',
-            path: '/beta/**',
-            validFrom: '2025-01-01T00:00:00Z',
-            validUntil: '2025-12-31T23:59:59Z'
-          }
-        ]
-      }
-    },
-    description: 'Rights with validity windows',
-    name: 'Time-Based Rights'
-  },
   'complex-hierarchy': {
     config: {
       roles: [
@@ -102,6 +69,22 @@ export const PRESETS: Record<string, Preset> = {
       'Multiple inheritance and mixed roles showing specificity and conflict resolution',
     name: 'Complex Hierarchy'
   },
+  'deny-override': {
+    config: {
+      roles: [
+        {
+          name: 'restricted-admin',
+          rights: [
+            { allow: '*', path: '/**' },
+            { allow: '', deny: '*', path: '/system/**' }
+          ]
+        }
+      ],
+      subject: { roles: ['restricted-admin'] }
+    },
+    description: 'Demonstrating deny rules overriding allow',
+    name: 'Deny Override'
+  },
   'fine-grained-resource': {
     config: {
       roles: [
@@ -120,10 +103,10 @@ export const PRESETS: Record<string, Preset> = {
         }
       ],
       subject: {
-        roles: ['manager'],
         rights: [
           { allow: 'd', path: '/org/projects/active/my-project/core-files' }
-        ]
+        ],
+        roles: ['manager']
       }
     },
     description: 'Path specificity nested deep with direct subject overrides',
@@ -152,5 +135,22 @@ export const PRESETS: Record<string, Preset> = {
     description:
       'Using tags to categorize and manage rights across different roles',
     name: 'Tagged Rights'
+  },
+  'time-based': {
+    config: {
+      roles: [],
+      subject: {
+        rights: [
+          {
+            allow: '*',
+            path: '/beta/**',
+            validFrom: '2025-01-01T00:00:00Z',
+            validUntil: '2025-12-31T23:59:59Z'
+          }
+        ]
+      }
+    },
+    description: 'Rights with validity windows',
+    name: 'Time-Based Rights'
   }
 };

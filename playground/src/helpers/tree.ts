@@ -1,35 +1,38 @@
 import { Right, Role, RoleRegistry, Subject } from '@/index';
 
-export interface TreeNode {
+export type TreeNode = {
+  children: TreeNode[];
   id: string;
   label: string;
-  type: 'subject' | 'role' | 'right' | 'inherited-role';
-  children: TreeNode[];
   meta?: {
-    source?: string;
-    specificity?: number;
     allow?: string;
     deny?: string;
     path?: string;
+    source?: string;
+    specificity?: number;
   };
-}
+  type: 'subject' | 'role' | 'right' | 'inherited-role';
+};
 
-export function buildTree(subject: Subject, _registry: RoleRegistry): TreeNode {
+export const buildTree = (
+  subject: Subject,
+  _registry: RoleRegistry
+): TreeNode => {
   const root: TreeNode = {
+    children: [],
     id: 'subject-root',
     label: 'Subject',
-    type: 'subject',
-    children: []
+    type: 'subject'
   };
 
   // Direct Rights
   const directRightsNode: TreeNode = {
-    id: 'direct-rights',
-    label: 'Direct Rights',
-    type: 'subject',
     children: subject.rights
       .allRights()
-      .map((r, i) => buildRightNode(r, `direct-${i}`))
+      .map((r, i) => buildRightNode(r, `direct-${i}`)),
+    id: 'direct-rights',
+    label: 'Direct Rights',
+    type: 'subject'
   };
   if (directRightsNode.children.length > 0) {
     root.children.push(directRightsNode);
@@ -41,14 +44,14 @@ export function buildTree(subject: Subject, _registry: RoleRegistry): TreeNode {
   });
 
   return root;
-}
+};
 
-function buildRoleNode(role: Role, id: string): TreeNode {
+const buildRoleNode = (role: Role, id: string): TreeNode => {
   const node: TreeNode = {
+    children: [],
     id,
     label: `Role: ${role.name}`,
-    type: 'role',
-    children: []
+    type: 'role'
   };
 
   // Role Rights
@@ -62,19 +65,17 @@ function buildRoleNode(role: Role, id: string): TreeNode {
   });
 
   return node;
-}
+};
 
-function buildRightNode(right: Right, id: string): TreeNode {
-  return {
-    id,
-    label: right.toString(),
-    type: 'right',
-    children: [],
-    meta: {
-      path: right.path,
-      allow: right.allowMaskValue.toString(), // or just letters if I want to be fancy
-      deny: right.denyMaskValue.toString(),
-      specificity: right.specificity()
-    }
-  };
-}
+const buildRightNode = (right: Right, id: string): TreeNode => ({
+  children: [],
+  id,
+  label: right.toString(),
+  meta: {
+    allow: right.allowMaskValue.toString(), // or just letters if I want to be fancy
+    deny: right.denyMaskValue.toString(),
+    path: right.path,
+    specificity: right.specificity()
+  },
+  type: 'right'
+});

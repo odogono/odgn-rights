@@ -398,7 +398,123 @@ button:disabled {
   margin-bottom: 4px;
 }
 
-.flag-name {
-  width: 60px;
-  font-weight: bold;
+/* Mobile Responsive Layout */
+@media (max-width: 1200px) {
+  .panels-container {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+  .side-column,
+  .center-column {
+    flex: none;
+    min-width: 0;
+    width: 100%;
+  }
+}
+
+/* Error Boundary Styling */
+.error-boundary-panel {
+  padding: 20px;
+  background-color: var(--panel-bg);
+  border: 1px solid var(--error-color);
+  border-radius: 4px;
+  margin: 16px;
+  color: var(--text-color);
+}
+
+/* Doc Panel Styling */
+.doc-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.doc-panel {
+  background-color: var(--panel-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  width: 90%;
+  max-width: 800px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+}
+
+.doc-header {
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.doc-header h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  color: var(--text-color);
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+
+.doc-content {
+  padding: 24px;
+  overflow-y: auto;
+  line-height: 1.6;
+}
+
+.doc-content section {
+  margin-bottom: 24px;
+}
+
+.doc-content h3 {
+  margin: 0 0 12px 0;
+  color: var(--accent-color);
+}
+
+.doc-content code {
+  background-color: #1e1e1e;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: monospace;
+}
+
+.doc-content kbd {
+  background-color: #333;
+  border: 1px solid #555;
+  border-radius: 3px;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2);
+  display: inline-block;
+  font-size: 0.85em;
+  font-family: sans-serif;
+  line-height: 1;
+  padding: 2px 4px;
+  margin: 0 2px;
+}
+
+/* Accessibility */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
 }

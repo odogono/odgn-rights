@@ -1,7 +1,11 @@
 import { useSetAtom } from 'jotai';
 
 import { PRESETS } from '../presets';
-import { editorContentAtom, editorFormatAtom } from '../store/atoms';
+import {
+  editorContentAtom,
+  editorFormatAtom,
+  showDocAtom
+} from '../store/atoms';
 import { configWithHistoryAtom, useHistory } from '../store/history';
 
 export const Toolbar = () => {
@@ -9,6 +13,7 @@ export const Toolbar = () => {
   const setConfig = useSetAtom(configWithHistoryAtom);
   const setEditorContent = useSetAtom(editorContentAtom);
   const setEditorFormat = useSetAtom(editorFormatAtom);
+  const setShowDoc = useSetAtom(showDocAtom);
 
   const loadPreset = (key: string) => {
     const preset = PRESETS[key];
@@ -47,6 +52,9 @@ export const Toolbar = () => {
       </div>
 
       <div className="toolbar-right" style={{ display: 'flex', gap: '8px' }}>
+        <button onClick={() => setShowDoc(true)} title="Show Help">
+          Help
+        </button>
         <button
           onClick={() => {
             navigator.clipboard.writeText(window.location.href);

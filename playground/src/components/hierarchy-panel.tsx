@@ -1,14 +1,14 @@
 import { useAtom, useAtomValue } from 'jotai';
 import { useMemo, useState } from 'react';
 
+import { buildTree, type TreeNode } from '../helpers/tree';
 import {
   roleRegistryAtom,
   selectedNodeAtom,
   subjectAtom
 } from '../store/atoms';
-import { buildTree, type TreeNode } from '../utils/tree';
 
-export function HierarchyPanel() {
+export const HierarchyPanel = () => {
   const subject = useAtomValue(subjectAtom);
   const registry = useAtomValue(roleRegistryAtom);
   const [selectedNode, setSelectedNode] = useAtom(selectedNodeAtom);
@@ -21,11 +21,11 @@ export function HierarchyPanel() {
         <h2>Hierarchy</h2>
       </header>
 
-      <div className="tree-view">
+      <div aria-label="Subject Hierarchy" className="tree-view" role="tree">
         <TreeNodeComponent
           node={tree}
-          selected={selectedNode}
           onSelect={setSelectedNode}
+          selected={selectedNode}
         />
       </div>
 
@@ -39,7 +39,7 @@ export function HierarchyPanel() {
             .allRights()
             .sort((a, b) => b.right.specificity() - a.right.specificity())
             .map((entry, i) => (
-              <div key={i} className="right-item">
+              <div className="right-item" key={i}>
                 <span className="right-str">{entry.right.toString()}</span>
                 {entry.source && (
                   <span className="source">
@@ -55,29 +55,34 @@ export function HierarchyPanel() {
       </div>
     </section>
   );
-}
+};
 
-function TreeNodeComponent({
+const TreeNodeComponent = ({
+  depth = 0,
   node,
-  selected,
   onSelect,
-  depth = 0
+  selected
 }: {
-  node: TreeNode;
-  selected: string | null;
-  onSelect: (id: string) => void;
   depth?: number;
-}) {
+  node: TreeNode;
+  onSelect: (id: string) => void;
+  selected: string | null;
+}) => {
   const [expanded, setExpanded] = useState(true);
 
   return (
-    <div className="tree-node" style={{ paddingLeft: depth * 12 }}>
+    <div className="tree-node" role="none" style={{ paddingLeft: depth * 12 }}>
       <div
+        aria-expanded={node.children.length > 0 ? expanded : undefined}
+        aria-selected={selected === node.id}
         className={`tree-node-label ${selected === node.id ? 'selected' : ''} node-type-${node.type}`}
         onClick={() => onSelect(node.id)}
+        role="treeitem"
+        tabIndex={0}
       >
         {node.children.length > 0 && (
           <button
+            aria-label={expanded ? 'Collapse' : 'Expand'}
             className="expand-toggle"
             onClick={e => {
               e.stopPropagation();
@@ -98,13 +103,13 @@ function TreeNodeComponent({
       {expanded &&
         node.children.map(child => (
           <TreeNodeComponent
+            depth={depth + 1}
             key={child.id}
             node={child}
-            selected={selected}
             onSelect={onSelect}
-            depth={depth + 1}
+            selected={selected}
           />
         ))}
     </div>
   );
-}
+};

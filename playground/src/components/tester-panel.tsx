@@ -54,15 +54,21 @@ export const TesterPanel = () => {
     const paths = new Set<string>();
     config.roles.forEach(role => {
       role.rights?.forEach(right => {
-        if (typeof right === 'string') return;
-        if (right.path)
+        if (typeof right === 'string') {
+          return;
+        }
+        if (right.path) {
           paths.add(right.path.replace(/\/\*\*$/, '').replace(/\/\*$/, ''));
+        }
       });
     });
     config.subject.rights?.forEach(right => {
-      if (typeof right === 'string') return;
-      if (right.path)
+      if (typeof right === 'string') {
+        return;
+      }
+      if (right.path) {
         paths.add(right.path.replace(/\/\*\*$/, '').replace(/\/\*$/, ''));
+      }
     });
     return Array.from(paths).sort();
   }, [config]);
@@ -75,24 +81,27 @@ export const TesterPanel = () => {
 
       <div className="panel-content">
         <div className="test-inputs">
-          <label>
-            Path:
-            <input
-              list="path-suggestions"
-              onChange={e => setPath(e.target.value)}
-              placeholder="/path/to/resource"
-              style={{ marginTop: '4px', width: '100%' }}
-              type="text"
-              value={path}
-            />
-            <datalist id="path-suggestions">
-              {suggestedPaths.map(p => (
-                <option key={p} value={p} />
-              ))}
-            </datalist>
-          </label>
+          <label htmlFor="test-path">Path:</label>
+          <input
+            id="test-path"
+            list="path-suggestions"
+            onChange={e => setPath(e.target.value)}
+            placeholder="/path/to/resource"
+            style={{ marginBottom: '12px', marginTop: '4px', width: '100%' }}
+            type="text"
+            value={path}
+          />
+          <datalist id="path-suggestions">
+            {suggestedPaths.map(p => (
+              <option key={p} value={p} />
+            ))}
+          </datalist>
 
-          <div className="flag-toggles">
+          <div
+            aria-label="Permission flags"
+            className="flag-toggles"
+            role="group"
+          >
             {FLAG_OPTIONS.map(({ flag, key, label }) => (
               <label className="flag-toggle" key={flag}>
                 <input
@@ -111,16 +120,18 @@ export const TesterPanel = () => {
           </button>
         </div>
 
-        {result && <TestResultDisplay result={result} />}
+        <div aria-live="polite">
+          {result && <TestResultDisplay result={result} />}
+        </div>
 
         <TimeSimulator />
 
         <div className="test-history" style={{ marginTop: '1rem' }}>
           <header
             style={{
+              alignItems: 'center',
               display: 'flex',
               justifyContent: 'space-between',
-              alignItems: 'center',
               marginBottom: '8px'
             }}
           >
@@ -136,14 +147,14 @@ export const TesterPanel = () => {
           {showHistory && history.length > 0 && (
             <ul
               style={{
-                listStyle: 'none',
-                padding: 0,
-                margin: 0,
+                border: '1px solid #eee',
+                borderRadius: '4px',
                 fontSize: '0.85rem',
+                listStyle: 'none',
+                margin: 0,
                 maxHeight: '200px',
                 overflowY: 'auto',
-                border: '1px solid #eee',
-                borderRadius: '4px'
+                padding: 0
               }}
             >
               {history.map(entry => (
@@ -154,14 +165,14 @@ export const TesterPanel = () => {
                     setFlags(entry.flags);
                   }}
                   style={{
-                    padding: '4px 8px',
+                    backgroundColor: entry.allowed
+                      ? 'rgba(0, 255, 0, 0.05)'
+                      : 'rgba(255, 0, 0, 0.05)',
                     borderBottom: '1px solid #eee',
                     cursor: 'pointer',
                     display: 'flex',
                     justifyContent: 'space-between',
-                    backgroundColor: entry.allowed
-                      ? 'rgba(0, 255, 0, 0.05)'
-                      : 'rgba(255, 0, 0, 0.05)'
+                    padding: '4px 8px'
                   }}
                 >
                   <span
@@ -173,7 +184,7 @@ export const TesterPanel = () => {
                   >
                     {entry.allowed ? '✓' : '✗'} {entry.path}
                   </span>
-                  <span style={{ opacity: 0.5, fontSize: '0.75rem' }}>
+                  <span style={{ fontSize: '0.75rem', opacity: 0.5 }}>
                     {getFlagSummary(entry.flags)}
                   </span>
                 </li>
@@ -183,10 +194,10 @@ export const TesterPanel = () => {
           {showHistory && history.length === 0 && (
             <div
               style={{
-                opacity: 0.5,
                 fontSize: '0.85rem',
-                textAlign: 'center',
-                padding: '1rem'
+                opacity: 0.5,
+                padding: '1rem',
+                textAlign: 'center'
               }}
             >
               No history yet
@@ -200,11 +211,21 @@ export const TesterPanel = () => {
 
 const getFlagSummary = (flags: number): string => {
   const res = [];
-  if (flags & Flags.READ) res.push('R');
-  if (flags & Flags.WRITE) res.push('W');
-  if (flags & Flags.CREATE) res.push('C');
-  if (flags & Flags.DELETE) res.push('D');
-  if (flags & Flags.EXECUTE) res.push('X');
+  if (flags & Flags.READ) {
+    res.push('R');
+  }
+  if (flags & Flags.WRITE) {
+    res.push('W');
+  }
+  if (flags & Flags.CREATE) {
+    res.push('C');
+  }
+  if (flags & Flags.DELETE) {
+    res.push('D');
+  }
+  if (flags & Flags.EXECUTE) {
+    res.push('X');
+  }
   return res.join('');
 };
 

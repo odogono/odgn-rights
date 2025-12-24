@@ -65,13 +65,19 @@ export const EditorPanel = () => {
     <section className="panel editor-panel">
       <header className="panel-header">
         <h2>Editor</h2>
-        <select
-          onChange={e => setFormat(e.target.value as 'json' | 'string')}
-          value={format}
-        >
-          <option value="json">JSON</option>
-          <option value="string">Rights String</option>
-        </select>
+        <div style={{ alignItems: 'center', display: 'flex', gap: '8px' }}>
+          <label htmlFor="editor-format" style={{ fontSize: '0.8rem' }}>
+            Format:
+          </label>
+          <select
+            id="editor-format"
+            onChange={e => setFormat(e.target.value as 'json' | 'string')}
+            value={format}
+          >
+            <option value="json">JSON</option>
+            <option value="string">Rights String</option>
+          </select>
+        </div>
       </header>
 
       <div className="editor-panel-content">
@@ -81,8 +87,9 @@ export const EditorPanel = () => {
           ))}
         </div>
         <textarea
-          ref={textareaRef}
+          aria-label="Rights configuration editor"
           className={`editor-textarea ${error ? 'has-error' : ''}`}
+          id="rights-editor"
           onChange={e => setContent(e.target.value)}
           onScroll={handleScroll}
           placeholder={
@@ -90,6 +97,7 @@ export const EditorPanel = () => {
               ? 'Enter JSON config...'
               : 'Enter rights (e.g. +r:/public/**)'
           }
+          ref={textareaRef}
           spellCheck={false}
           value={content}
           wrap="off"
@@ -97,11 +105,13 @@ export const EditorPanel = () => {
       </div>
 
       <footer className="panel-footer">
-        {error ? (
-          <span className="error">{error}</span>
-        ) : (
-          <span className="success">Valid configuration</span>
-        )}
+        <div aria-live="polite">
+          {error ? (
+            <span className="error">{error}</span>
+          ) : (
+            <span className="success">Valid configuration</span>
+          )}
+        </div>
         <button disabled={!!error || !content} onClick={handleApply}>
           Apply Changes
         </button>

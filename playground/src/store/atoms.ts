@@ -48,6 +48,8 @@ export const testHistoryAtom = atom<TestHistoryEntry[]>([]);
 
 export const selectedNodeAtom = atom<string | null>(null);
 
+export const showDocAtom = atom<boolean>(false);
+
 export type ExplainResult = {
   allowed: boolean;
   details: Array<{
