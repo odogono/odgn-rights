@@ -1,6 +1,6 @@
 import { ALL_BITS, Flags, hasBit } from './constants';
+import { normalizePath } from './helpers';
 import { Right, type ConditionContext, type RightInit } from './right';
-import { normalizePath } from './utils';
 
 export type RightJSON = {
   allow: string;

@@ -1,6 +1,6 @@
 {
   "name": "odgn-rights",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Tiny TypeScript library for expressing and evaluating hierarchical rights with simple glob patterns.",
   "keywords": [
     "rights",
@@ -28,6 +28,18 @@
     "./cli": {
       "types": "./dist/cli/index.d.ts",
       "import": "./dist/cli/index.js"
+    },
+    "./adapters": {
+      "types": "./dist/adapters/index.d.ts",
+      "import": "./dist/adapters/index.js"
+    },
+    "./adapters/sqlite": {
+      "types": "./dist/adapters/sqlite-adapter.d.ts",
+      "import": "./dist/adapters/sqlite-adapter.js"
+    },
+    "./adapters/postgres": {
+      "types": "./dist/adapters/postgres-adapter.d.ts",
+      "import": "./dist/adapters/postgres-adapter.js"
     }
   },
   "files": [
@@ -55,12 +67,14 @@
     "@ianvs/prettier-plugin-sort-imports": "^4.7.0",
     "@nkzw/eslint-config": "^3.3.0",
     "@playwright/test": "^1.57.0",
+    "@testcontainers/postgresql": "^11.11.0",
     "@types/bun": "latest",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "eslint": "^9",
-    "knip": "^5.76.3",
-    "prettier": "^3"
+    "knip": "^5.80.0",
+    "prettier": "^3",
+    "testcontainers": "^11.11.0"
   },
   "peerDependencies": {
     "typescript": "^5"
@@ -71,8 +85,12 @@
   "sideEffects": false,
   "dependencies": {
     "commander": "^14.0.2",
-    "jotai": "^2.16.0",
+    "jotai": "^2.16.1",
     "react": "^19.2.3",
     "react-dom": "^19.2.3"
-  }
+  },
+  "trustedDependencies": [
+    "protobufjs",
+    "unrs-resolver"
+  ]
 }

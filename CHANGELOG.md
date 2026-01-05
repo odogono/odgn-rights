@@ -1,3 +1,19 @@
+## 0.3.0 - 2026-01-05
+
+### Added
+
+- **Database Adapters**: New persistence layer for storing rights, roles, and subjects in relational databases.
+  - `SQLiteAdapter`: Full-featured adapter for SQLite/Bun SQLite with synchronous operations.
+  - `PostgresAdapter`: Adapter for PostgreSQL using the `postgres` package.
+  - `BaseAdapter`: Abstract base class for implementing custom adapters.
+  - `DatabaseAdapter` interface defining the contract for all adapters.
+- **Schema Management**: Automatic table creation and migrations via `migrate()` method.
+- **Transaction Support**: ACID-compliant transactions via `transaction()` method for atomic operations.
+- **Factory Functions**: Convenience functions (`createSQLiteRights`, `createSQLiteRegistry`, `createPostgresRights`, `createPostgresRegistry`) for quick setup.
+- **Configurable Table Prefix**: All table names can be prefixed (default: `tbl_`) to avoid conflicts.
+- **Full Entity Support**: Save and load `Right`, `Rights`, `Role`, `RoleRegistry`, and `Subject` instances.
+- **Path Pattern Queries**: Load rights by path pattern with `loadRightsByPath()`.
+
 ## 0.2.0 - 2026-01-05
 
 ### Added

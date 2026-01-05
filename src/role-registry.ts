@@ -1,3 +1,4 @@
+import type { DatabaseAdapter } from './adapters/types';
 import { Rights, type RightJSON } from './rights';
 import { Role } from './role';
 
@@ -29,6 +30,20 @@ export class RoleRegistry {
 
   toJSON(): RoleJSON[] {
     return Array.from(this.roles.values()).map(r => r.toJSON());
+  }
+
+  /**
+   * Load all roles and their relationships from a database adapter
+   */
+  static async loadFrom(adapter: DatabaseAdapter): Promise<RoleRegistry> {
+    return adapter.loadRegistry();
+  }
+
+  /**
+   * Save all roles and their relationships to a database adapter
+   */
+  async saveTo(adapter: DatabaseAdapter): Promise<void> {
+    await adapter.saveRegistry(this);
   }
 
   static fromJSON(data: RoleJSON[]): RoleRegistry {

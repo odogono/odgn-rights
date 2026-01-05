@@ -4,4 +4,5 @@ export * from './rights';
 export * from './role';
 export * from './role-registry';
 export * from './subject';
-export * from './utils';
+export * from './helpers';
+export * from './adapters';

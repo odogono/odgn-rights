@@ -2,8 +2,8 @@
 import { Command } from 'commander';
 
 import type { Flags } from '@/constants';
+import { lettersFromMask } from '@/helpers';
 
-import { lettersFromMask } from '../../utils';
 import { loadConfig } from '../helpers/config-loader';
 import { parseFlags } from '../helpers/flag-parser';
 import { colors, flagName, formatResult } from '../helpers/output';

@@ -1,5 +1,5 @@
 import { ALL_BITS, Flags, hasBit } from './constants';
-import { lettersFromMask, normalizePath } from './utils';
+import { lettersFromMask, normalizePath } from './helpers';
 
 export type ConditionContext = unknown;
 export type Condition = (context?: ConditionContext) => boolean;
@@ -25,6 +25,7 @@ export class Right {
   private readonly _tags: Set<string>;
   private readonly _specificity: number;
   private readonly _re?: RegExp;
+  private _dbId?: number;
 
   constructor(path: string, init?: RightInit) {
     this.path = normalizePath(path);
@@ -140,6 +141,14 @@ export class Right {
 
   get denyMaskValue(): number {
     return this.denyMask;
+  }
+
+  get dbId(): number | undefined {
+    return this._dbId;
+  }
+
+  _setDbId(id: number): void {
+    this._dbId = id;
   }
 
   toString(): string {

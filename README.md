@@ -226,3 +226,209 @@ The CLI supports two configuration formats:
 | ALL     | \*     | All permissions    |
 
 Flags can be combined: `RW`, `READ,WRITE`, `RWCDX`
+
+## Database Adapters
+
+Database adapters enable persistent storage of rights configurations in SQLite or PostgreSQL databases. This is useful for applications that need to load permissions from a database, share configurations across services, or audit permission changes.
+
+### Installation
+
+The adapters use Bun's built-in database drivers (`bun:sqlite` and `bun` SQL), so no additional dependencies are required.
+
+```ts
+import { PostgresAdapter, SQLiteAdapter } from 'odgn-rights/adapters';
+```
+
+### Table Prefix
+
+All adapters support a configurable table prefix. The default prefix is `tbl_`.
+
+```ts
+// Default prefix creates tables: tbl_rights, tbl_roles, etc.
+const adapter = new SQLiteAdapter({ filename: './permissions.db' });
+
+// Custom prefix creates tables: auth_rights, auth_roles, etc.
+const adapter = new SQLiteAdapter({
+  filename: './permissions.db',
+  tablePrefix: 'auth_'
+});
+
+// No prefix creates tables: rights, roles, etc.
+const adapter = new SQLiteAdapter({
+  filename: './permissions.db',
+  tablePrefix: ''
+});
+```
+
+### SQLite Adapter
+
+SQLite is ideal for single-process applications, embedded systems, or local development.
+
+```ts
+import { Flags, Right, Rights } from 'odgn-rights';
+import { SQLiteAdapter } from 'odgn-rights/adapters';
+
+// Create adapter and connect
+const adapter = new SQLiteAdapter({
+  filename: './permissions.db', // Use ':memory:' for in-memory
+  enableWAL: true // Enable WAL mode for better concurrency
+});
+
+await adapter.connect();
+await adapter.migrate();
+
+// Save rights
+const rights = new Rights();
+rights.allow('/users/*', Flags.READ);
+rights.allow('/admin/**', Flags.ALL);
+await adapter.saveRights(rights);
+
+// Load rights
+const loaded = await adapter.loadRights();
+loaded.has('/users/123', Flags.READ); // true
+
+// Save and load roles
+const { Role, RoleRegistry } = await import('odgn-rights');
+const registry = new RoleRegistry();
+const admin = registry.define('admin');
+admin.rights.allow('/**', Flags.ALL);
+await registry.saveTo(adapter);
+
+// Load registry from database
+const loadedRegistry = await RoleRegistry.loadFrom(adapter);
+
+await adapter.disconnect();
+```
+
+### PostgreSQL Adapter
+
+PostgreSQL is ideal for multi-process applications, microservices, or when you need shared access to permissions.
+
+```ts
+import { Flags, RoleRegistry, Subject } from 'odgn-rights';
+import { PostgresAdapter } from 'odgn-rights/adapters';
+
+const adapter = new PostgresAdapter({
+  url: 'postgres://user:pass@localhost:5432/mydb',
+  // Or use individual options:
+  // hostname: 'localhost',
+  // port: 5432,
+  // database: 'mydb',
+  // username: 'user',
+  // password: 'pass',
+  tablePrefix: 'perms_' // Optional custom prefix
+});
+
+await adapter.connect();
+await adapter.migrate();
+
+// Load registry and make changes
+const registry = await adapter.loadRegistry();
+const editor = registry.define('editor');
+editor.rights.allow('/content/**', Flags.READ, Flags.WRITE);
+
+// Save back
+await adapter.saveRegistry(registry);
+
+// Save subjects with roles
+const user = new Subject();
+user.memberOf(editor);
+await adapter.saveSubject('user-123', user);
+
+await adapter.disconnect();
+```
+
+### Factory Functions
+
+Convenience functions for common patterns:
+
+```ts
+import {
+  createPostgresRegistry,
+  createPostgresRights,
+  createSQLiteRegistry,
+  createSQLiteRights
+} from 'odgn-rights/adapters';
+
+// Create SQLite adapter with rights
+const { adapter, rights } = await createSQLiteRights({
+  filename: './permissions.db'
+});
+rights.allow('/public/**', Flags.READ);
+await adapter.saveRights(rights);
+await adapter.disconnect();
+
+// Create SQLite adapter with registry
+const { adapter: regAdapter, registry } = await createSQLiteRegistry({
+  filename: ':memory:'
+});
+const viewer = registry.define('viewer');
+viewer.rights.allow('/read/*', Flags.READ);
+await registry.saveTo(regAdapter);
+await regAdapter.disconnect();
+```
+
+### Transactions
+
+Both adapters support transactions for atomic operations:
+
+```ts
+await adapter.transaction(async () => {
+  await adapter.saveRight(new Right('/a', { allow: [Flags.READ] }));
+  await adapter.saveRight(new Right('/b', { allow: [Flags.WRITE] }));
+  // If an error is thrown, all changes are rolled back
+});
+```
+
+### Adapter Interface
+
+All adapters implement the `DatabaseAdapter` interface:
+
+| Method                             | Description                       |
+| ---------------------------------- | --------------------------------- |
+| `connect()`                        | Connect to the database           |
+| `disconnect()`                     | Disconnect from the database      |
+| `migrate()`                        | Create or update schema           |
+| `saveRight(right)`                 | Save a single right               |
+| `saveRights(rights)`               | Save multiple rights              |
+| `loadRight(id)`                    | Load a right by ID                |
+| `loadRights()`                     | Load all rights                   |
+| `loadRightsByPath(pattern)`        | Load rights matching a pattern    |
+| `deleteRight(id)`                  | Delete a right                    |
+| `saveRole(role)`                   | Save a role with its rights       |
+| `loadRole(name)`                   | Load a role by name               |
+| `loadRoles()`                      | Load all roles                    |
+| `deleteRole(name)`                 | Delete a role                     |
+| `saveRegistry(registry)`           | Save entire RoleRegistry          |
+| `loadRegistry()`                   | Load RoleRegistry with all roles  |
+| `saveSubject(identifier, subject)` | Save a subject                    |
+| `loadSubject(identifier)`          | Load a subject                    |
+| `deleteSubject(identifier)`        | Delete a subject                  |
+| `clear()`                          | Clear all data (for testing)      |
+| `transaction(fn)`                  | Execute operations in transaction |
+
+### Database Schema
+
+The adapters create the following tables (with the configured prefix):
+
+| Table                      | Purpose                              |
+| -------------------------- | ------------------------------------ |
+| `{prefix}rights`           | Individual rights with paths & flags |
+| `{prefix}roles`            | Role definitions                     |
+| `{prefix}role_rights`      | Role-to-rights mapping               |
+| `{prefix}role_inheritance` | Role inheritance relationships       |
+| `{prefix}subjects`         | Subject records                      |
+| `{prefix}subject_roles`    | Subject-to-roles mapping             |
+| `{prefix}subject_rights`   | Direct subject rights                |
+
+### Persistence Metadata
+
+Rights saved to the database receive a `dbId` property:
+
+```ts
+const right = new Right('/test', { allow: [Flags.READ] });
+console.log(right.dbId); // undefined
+
+await adapter.saveRight(right);
+console.log(right.dbId); // 1 (database ID)
+```
