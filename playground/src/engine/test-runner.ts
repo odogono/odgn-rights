@@ -1,5 +1,5 @@
 // playground/src/engine/test-runner.ts
-import { type Subject } from '@/index';
+import { Flags, type Subject } from '@/index';
 
 import type { TestCase, TestResult, TestRunSummary } from '../types/test-suite';
 
@@ -15,7 +15,7 @@ export class TestRunner {
 
     const explanation = this.subject.explain(
       testCase.path,
-      testCase.flags as any,
+      testCase.flags as Flags,
       context
     );
 

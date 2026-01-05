@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 import { useAtom, useAtomValue } from 'jotai';
 import { useEffect, useRef } from 'react';
 
@@ -38,7 +39,7 @@ export const EditorPanel = () => {
         setContent(newContent);
       }
     }
-  }, [config, format]);
+  }, [config, format, content, setContent]);
 
   const handleApply = () => {
     if (error) {

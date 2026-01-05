@@ -1,3 +1,14 @@
+## 0.2.0 - 2026-01-05
+
+### Added
+
+- **CLI Tool**: New command-line interface for testing and debugging permission configurations.
+  - `check`: Test permission checks against a configuration file with support for context and time overrides.
+  - `explain`: Get detailed breakdowns of why permissions are allowed or denied, including rule matching and suggestions.
+  - `validate`: Validate configuration files (JSON or text format) with optional strict mode for detecting broad patterns.
+- **Binary Executables**: Available as `odgn-rights` or `rights` after installation.
+- **Scripting Support**: `--quiet` mode for `check` and `--json` output for `explain` and `validate` commands.
+
 ## 0.1.0 - 2025-12-22
 
 ### Added

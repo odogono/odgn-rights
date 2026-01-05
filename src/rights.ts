@@ -1,5 +1,5 @@
 import { ALL_BITS, Flags, hasBit } from './constants';
-import { Right, type ConditionContext } from './right';
+import { Right, type ConditionContext, type RightInit } from './right';
 import { normalizePath } from './utils';
 
 export type RightJSON = {
@@ -236,51 +236,25 @@ export class Rights {
     const rights = new Rights();
     for (const item of arr) {
       const p = normalizePath(item.path);
-      const init: any = {
+      const init: RightInit = {
         description: item.description,
         tags: item.tags
       };
       if (item.validFrom) {
         const d = new Date(item.validFrom);
-        if (!isNaN(d.getTime())) {
+        if (!Number.isNaN(d.getTime())) {
           init.validFrom = d;
         }
       }
       if (item.validUntil) {
         const d = new Date(item.validUntil);
-        if (!isNaN(d.getTime())) {
+        if (!Number.isNaN(d.getTime())) {
           init.validUntil = d;
         }
       }
       const r = new Right(p, init);
       const allowStr = item.allow;
       const denyStr = item.deny;
-
-      const applyFlags = (str: string, apply: (f: Flags) => void) => {
-        if (str === '*') {
-          apply(Flags.ALL);
-        } else {
-          for (const ch of str) {
-            switch (ch) {
-              case 'r':
-                apply(Flags.READ);
-                break;
-              case 'w':
-                apply(Flags.WRITE);
-                break;
-              case 'c':
-                apply(Flags.CREATE);
-                break;
-              case 'd':
-                apply(Flags.DELETE);
-                break;
-              case 'x':
-                apply(Flags.EXECUTE);
-                break;
-            }
-          }
-        }
-      };
 
       if (allowStr) {
         applyFlags(allowStr, f => r.allow(f));
@@ -316,14 +290,41 @@ export class Rights {
   }
 }
 
-function getNow(context?: ConditionContext): Date {
+const getNow = (context?: ConditionContext): Date => {
   if (
     context &&
     typeof context === 'object' &&
     '_now' in context &&
-    (context as any)._now instanceof Date
+    // eslint-disable-next-line @nkzw/no-instanceof
+    (context as Record<string, unknown>)._now instanceof Date
   ) {
-    return (context as any)._now;
+    return (context as Record<string, unknown>)._now as Date;
   }
   return new Date();
-}
+};
+
+const applyFlags = (str: string, apply: (f: Flags) => void) => {
+  if (str === '*') {
+    apply(Flags.ALL);
+  } else {
+    for (const ch of str) {
+      switch (ch) {
+        case 'r':
+          apply(Flags.READ);
+          break;
+        case 'w':
+          apply(Flags.WRITE);
+          break;
+        case 'c':
+          apply(Flags.CREATE);
+          break;
+        case 'd':
+          apply(Flags.DELETE);
+          break;
+        case 'x':
+          apply(Flags.EXECUTE);
+          break;
+      }
+    }
+  }
+};

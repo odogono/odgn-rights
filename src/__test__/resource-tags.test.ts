@@ -102,8 +102,8 @@ describe('Resource Tags / Labels', () => {
         tags: ['pii', 'sensitive']
       });
       expect(right.toJSON()).toEqual({
-        path: '/billing/**',
         allow: 'r',
+        path: '/billing/**',
         tags: ['pii', 'sensitive']
       });
     });

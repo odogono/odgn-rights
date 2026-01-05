@@ -9,9 +9,9 @@ export type RightInit = {
   condition?: Condition;
   deny?: Flags[];
   description?: string;
+  tags?: string[];
   validFrom?: Date;
   validUntil?: Date;
-  tags?: string[];
 };
 
 export class Right {
@@ -305,13 +305,13 @@ export class Right {
       const until = parts[1];
       if (from && from !== '*') {
         const d = new Date(from);
-        if (!isNaN(d.getTime())) {
+        if (!Number.isNaN(d.getTime())) {
           init.validFrom = d;
         }
       }
       if (until && until !== '*') {
         const d = new Date(until);
-        if (!isNaN(d.getTime())) {
+        if (!Number.isNaN(d.getTime())) {
           init.validUntil = d;
         }
       }

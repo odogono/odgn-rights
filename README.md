@@ -105,3 +105,124 @@ const json = rights.toJSON();
 // [ { path: '/', allow: 'r' }, { path: '/*/device/**', allow: 'c' }, ... ]
 const loaded = Rights.fromJSON(json);
 ```
+
+## CLI Tool
+
+The CLI tool helps test and debug permission configurations from the command line.
+
+### Installation
+
+```bash
+# Install globally
+npm install -g @odgn/rights
+
+# Or use with npx
+npx @odgn/rights --help
+
+# Or run directly with bun
+bun run src/cli/index.ts --help
+```
+
+### Commands
+
+#### check
+
+Test if a permission is allowed:
+
+```bash
+# Basic usage
+odgn-rights check -c config.json -p /users/123 -f READ
+
+# With combined flags
+odgn-rights check -c config.json -p /users/123 -f RW
+
+# With comma-separated flags
+odgn-rights check -c config.json -p /users/123 -f READ,WRITE
+
+# Quiet mode for scripting (outputs 'true' or 'false')
+odgn-rights check -c config.json -p /users/123 -f READ --quiet
+
+# With context for conditional rights
+odgn-rights check -c config.json -p /posts/1 -f WRITE --context '{"userId":"abc","ownerId":"abc"}'
+
+# Override time for time-based rights
+odgn-rights check -c config.json -p /scheduled -f READ --time 2025-06-15T12:00:00Z
+```
+
+Exit codes: `0` = allowed, `1` = denied, `2` = error
+
+#### explain
+
+Understand why a permission is allowed or denied:
+
+```bash
+# Basic usage
+odgn-rights explain -c config.json -p /users/123 -f WRITE
+
+# JSON output
+odgn-rights explain -c config.json -p /users/123 -f READ --json
+```
+
+The explain command shows:
+
+- Decision breakdown per flag
+- Matching rules sorted by specificity
+- Suggestions for granting denied permissions
+
+#### validate
+
+Validate a configuration file:
+
+```bash
+# Validate JSON config
+odgn-rights validate config.json
+
+# Validate string format config
+odgn-rights validate config.txt
+
+# Strict mode (warns on broad patterns like /**)
+odgn-rights validate --strict config.json
+
+# JSON output
+odgn-rights validate --json config.json
+```
+
+Exit codes: `0` = valid, `1` = validation errors, `2` = file error
+
+### Configuration Formats
+
+The CLI supports two configuration formats:
+
+**JSON format** (`config.json`):
+
+```json
+[
+  { "path": "/", "allow": "r" },
+  { "path": "/users/*", "allow": "rw" },
+  { "path": "/admin/**", "allow": "*", "tags": ["admin"] },
+  { "path": "/scheduled", "allow": "r", "validFrom": "2025-01-01T00:00:00Z" }
+]
+```
+
+**String format** (`config.txt`):
+
+```
+# Comments start with #
++r:/
++rw:/users/*
++*:/admin/**
+-d+rw:/public
+```
+
+### Flag Reference
+
+| Flag    | Letter | Description        |
+| ------- | ------ | ------------------ |
+| READ    | R      | Read permission    |
+| WRITE   | W      | Write permission   |
+| CREATE  | C      | Create permission  |
+| DELETE  | D      | Delete permission  |
+| EXECUTE | X      | Execute permission |
+| ALL     | \*     | All permissions    |
+
+Flags can be combined: `RW`, `READ,WRITE`, `RWCDX`

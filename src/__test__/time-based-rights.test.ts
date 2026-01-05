@@ -110,8 +110,9 @@ describe('Time-Based Rights', () => {
       const s = '+rw:/path@2025-01-01T00:00:00.000Z/2025-12-31T23:59:59.999Z';
       const right = Right.parse(s);
       expect(right.path).toBe('/path');
-      // Today is 2025-12-23, so it should be valid
-      expect(right.has(Flags.READ)).toBe(true);
+      // Test with a date within the valid range
+      const validDate = new Date('2025-06-15T12:00:00.000Z');
+      expect(right.has(Flags.READ, validDate)).toBe(true);
       expect(right.validFrom?.toISOString()).toBe('2025-01-01T00:00:00.000Z');
       expect(right.validUntil?.toISOString()).toBe('2025-12-31T23:59:59.999Z');
     });

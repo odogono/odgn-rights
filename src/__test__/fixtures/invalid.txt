@@ -1,0 +1,3 @@
+# Invalid rights - time range error
++r:/valid
++r:/bad-time-range@2025-12-31T00:00:00Z/2025-01-01T00:00:00Z

@@ -79,7 +79,7 @@ export class Subject {
       source?: { name?: string; type: 'direct' | 'role' };
     }>;
   } {
-    const { rights, meta } = this.ensureAggregate();
+    const { meta, rights } = this.ensureAggregate();
     const res = rights.explain(path, flag, context);
     return {
       allowed: res.allowed,
@@ -94,7 +94,7 @@ export class Subject {
     right: Right;
     source?: { name?: string; type: 'direct' | 'role' };
   }> {
-    const { rights, meta } = this.ensureAggregate();
+    const { meta, rights } = this.ensureAggregate();
     return rights.allRights().map(right => ({
       right,
       source: meta.get(right)
@@ -102,8 +102,8 @@ export class Subject {
   }
 
   private ensureAggregate(): {
-    rights: Rights;
     meta: Map<Right, { name?: string; type: 'direct' | 'role' }>;
+    rights: Rights;
   } {
     if (!this._aggregate) {
       this._aggregate = new Rights();
@@ -128,7 +128,7 @@ export class Subject {
         this._aggregateMeta.set(r, { type: 'direct' });
       }
     }
-    return { rights: this._aggregate, meta: this._aggregateMeta! };
+    return { meta: this._aggregateMeta!, rights: this._aggregate };
   }
 
   // Convenience helpers

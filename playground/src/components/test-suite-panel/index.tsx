@@ -14,7 +14,11 @@ import {
   testResultsAtom,
   testSuiteAtom
 } from '@/playground/store/test-suite-atoms';
-import type { TestCase, TestSuite } from '@/playground/types/test-suite';
+import type {
+  TestCase,
+  TestResult,
+  TestSuite
+} from '@/playground/types/test-suite';
 
 export const TestSuitePanel = () => {
   const [suite, setSuite] = useAtom(testSuiteAtom);
@@ -275,8 +279,8 @@ export const TestSuitePanel = () => {
               )}
               {(results
                 ? filteredResults
-                : suite.tests.map(t => ({ testCase: t }) as any)
-              ).map((item: any) => {
+                : suite.tests.map(t => ({ testCase: t }) as TestResult)
+              ).map((item: TestResult) => {
                 const testCase = item.testCase || item;
                 const result = item.passed !== undefined ? item : null;
                 return (

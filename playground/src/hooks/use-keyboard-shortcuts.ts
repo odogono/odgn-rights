@@ -1,3 +1,4 @@
+/* eslint-disable @nkzw/no-instanceof */
 import { useSetAtom } from 'jotai';
 import { useEffect } from 'react';
 

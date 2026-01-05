@@ -105,5 +105,5 @@ export const testResultAtom = atom(get => {
   }
 
   const context = simulatedTime ? { _now: simulatedTime } : undefined;
-  return subject.explain(path, flags as any, context) as ExplainResult;
+  return subject.explain(path, flags as Flags, context) as ExplainResult;
 });

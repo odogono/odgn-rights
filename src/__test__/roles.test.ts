@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'bun:test';
 
-import { Flags, Right, Rights, Role, RoleRegistry, Subject } from '../index';
+import {
+  Flags,
+  Right,
+  Rights,
+  Role,
+  RoleRegistry,
+  Subject,
+  type RoleJSON
+} from '../index';
 
 describe('Role Basics', () => {
   it('inherits rights from parents', () => {
@@ -118,13 +126,13 @@ describe('RoleRegistry', () => {
   it('throws error when parent role is missing', () => {
     const data = [
       {
-        name: 'child',
         inherits: ['parent'],
+        name: 'child',
         rights: []
       }
     ];
 
-    expect(() => RoleRegistry.fromJSON(data as any)).toThrow(
+    expect(() => RoleRegistry.fromJSON(data as RoleJSON[])).toThrow(
       /inherits from missing role parent/
     );
   });

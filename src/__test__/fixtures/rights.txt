@@ -1,0 +1,5 @@
+# Sample rights configuration
++r:/
++rw:/users/*
++*:/admin/**
+-wcd+r:/public

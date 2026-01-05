@@ -1,0 +1,11 @@
+[
+  { "path": "/valid", "allow": "r" },
+  { "allow": "w" },
+  { "path": "/no-perms" },
+  {
+    "path": "/bad-time",
+    "allow": "r",
+    "validFrom": "2025-12-31T00:00:00Z",
+    "validUntil": "2025-01-01T00:00:00Z"
+  }
+]

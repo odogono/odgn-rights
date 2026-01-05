@@ -37,7 +37,9 @@ export const filteredResultsAtom = atom(get => {
   const results = get(testResultsAtom);
   const filter = get(testFilterAtom);
 
-  if (!results) return [];
+  if (!results) {
+    return [];
+  }
 
   switch (filter) {
     case 'passed':

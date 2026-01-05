@@ -1,9 +1,10 @@
+/* eslint-disable no-console */
 const result = await Bun.build({
   entrypoints: ['./playground/src/main.tsx'],
-  target: 'browser',
+  external: [],
   minify: true,
   sourcemap: 'none',
-  external: []
+  target: 'browser'
 });
 
 if (!result.success) {
