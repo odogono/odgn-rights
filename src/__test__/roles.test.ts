@@ -223,3 +223,121 @@ describe('ABAC / Contextual Rights', () => {
     expect(rights.read('/secret', { isInternal: false })).toBe(false); // Condition met, apply deny
   });
 });
+
+describe('Subject batch permission checks', () => {
+  it('checks multiple permissions for a subject with roles', () => {
+    const reader = new Role('reader', new Rights().allow('/docs', Flags.READ));
+    const writer = new Role(
+      'writer',
+      new Rights().allow('/posts', Flags.WRITE)
+    );
+    const sub = new Subject().memberOf(reader).memberOf(writer);
+
+    const results = sub.checkMany([
+      { flags: Flags.READ, path: '/docs' },
+      { flags: Flags.WRITE, path: '/docs' },
+      { flags: Flags.WRITE, path: '/posts' },
+      { flags: Flags.READ, path: '/posts' }
+    ]);
+
+    expect(results).toEqual([true, false, true, false]);
+  });
+
+  it('handles mixed direct rights and role-based rights', () => {
+    const registry = new RoleRegistry();
+    const viewer = registry.define(
+      'viewer',
+      new Rights().allow('/public', Flags.READ)
+    );
+    const sub = new Subject().memberOf(viewer);
+    sub.rights.allow('/private', Flags.ALL);
+
+    const results = sub.checkMany([
+      { flags: Flags.READ, path: '/public' },
+      { flags: Flags.ALL, path: '/private' },
+      { flags: Flags.DELETE, path: '/private' },
+      { flags: Flags.WRITE, path: '/public' }
+    ]);
+
+    expect(results).toEqual([true, true, true, false]);
+  });
+
+  it('respects shared context across all checks', () => {
+    const rights = new Rights();
+    rights.add(
+      new Right('/posts/*', {
+        allow: [Flags.WRITE],
+        condition: ctx =>
+          (ctx as { userId: string }).userId ===
+          (ctx as { ownerId: string }).ownerId
+      })
+    );
+
+    const sub = new Subject();
+    sub.rights.add(
+      new Right('/posts/*', {
+        allow: [Flags.WRITE],
+        condition: ctx =>
+          (ctx as { userId: string }).userId ===
+          (ctx as { ownerId: string }).ownerId
+      })
+    );
+
+    const results = sub.checkMany(
+      [
+        { flags: Flags.WRITE, path: '/posts/1' },
+        { flags: Flags.WRITE, path: '/posts/2' },
+        { flags: Flags.WRITE, path: '/posts/3' }
+      ],
+      { ownerId: 'user1', userId: 'user1' }
+    );
+
+    expect(results).toEqual([true, true, true]);
+  });
+
+  it('returns empty array for empty input', () => {
+    const reader = new Role('reader', new Rights().allow('/docs', Flags.READ));
+    const sub = new Subject().memberOf(reader);
+
+    const results = sub.checkMany([]);
+
+    expect(results).toEqual([]);
+  });
+
+  it('is consistent with individual has() calls', () => {
+    const viewer = new Role('viewer', new Rights().allow('/docs', Flags.READ));
+    const editor = new Role('editor', new Rights().allow('/docs', Flags.WRITE));
+    const sub = new Subject().memberOf(viewer).memberOf(editor);
+
+    const requests = [
+      { flags: Flags.READ, path: '/docs' },
+      { flags: Flags.WRITE, path: '/docs' },
+      { flags: Flags.DELETE, path: '/docs' },
+      { flags: Flags.READ, path: '/other' }
+    ];
+
+    const batchResults = sub.checkMany(requests);
+    const individualResults = requests.map(req => sub.has(req.path, req.flags));
+
+    expect(batchResults).toEqual(individualResults);
+  });
+
+  it('handles inheritance chains in batch checks', () => {
+    const base = new Role('base', new Rights().allow('/', Flags.READ));
+    const editor = new Role(
+      'editor',
+      new Rights().allow('/content', Flags.WRITE)
+    );
+    editor.inheritsFrom(base);
+
+    const sub = new Subject().memberOf(editor);
+
+    const results = sub.checkMany([
+      { flags: Flags.WRITE, path: '/content' },
+      { flags: Flags.READ, path: '/other' },
+      { flags: Flags.READ, path: '/content' }
+    ]);
+
+    expect(results).toEqual([true, true, true]);
+  });
+});

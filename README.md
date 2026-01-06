@@ -200,6 +200,74 @@ const json = rights.toJSON();
 const loaded = Rights.fromJSON(json);
 ```
 
+## Batch Permission Checks
+
+Efficiently check multiple permissions at once with `checkMany()`.
+
+### Basic Usage
+
+```ts
+const rights = new Rights();
+rights.allow('/users/*', Flags.READ);
+rights.allow('/posts/*', Flags.WRITE);
+rights.deny('/admin', Flags.ALL);
+
+const results = rights.checkMany([
+  { path: '/users/1', flags: Flags.READ },
+  { path: '/posts/1', flags: Flags.WRITE },
+  { path: '/admin', flags: Flags.ALL }
+]);
+// Returns: [true, true, false]
+```
+
+### With Context
+
+The same context is shared across all checks:
+
+```ts
+rights.add(
+  new Right('/posts/*', {
+    allow: [Flags.WRITE],
+    condition: ctx => ctx.userId === ctx.ownerId
+  })
+);
+
+const results = rights.checkMany(
+  [
+    { path: '/posts/1', flags: Flags.WRITE },
+    { path: '/posts/2', flags: Flags.WRITE },
+    { path: '/posts/3', flags: Flags.WRITE }
+  ],
+  { userId: 'user1', ownerId: 'user1' }
+);
+// Returns: [true, true, true]
+```
+
+### With Subjects
+
+Works with subjects that have multiple roles:
+
+```ts
+const viewer = new Role('viewer', new Rights().allow('/docs', Flags.READ));
+const writer = new Role('writer', new Rights().allow('/docs', Flags.WRITE));
+
+const subject = new Subject().memberOf(viewer).memberOf(writer);
+
+const results = subject.checkMany([
+  { path: '/docs', flags: Flags.READ },
+  { path: '/docs', flags: Flags.WRITE },
+  { path: '/docs', flags: Flags.DELETE }
+]);
+// Returns: [true, true, false]
+```
+
+### Use Cases
+
+- **Bulk authorization**: Check multiple resource permissions in a single call
+- **Feature flags**: Enable/disable multiple features based on permissions
+- **API responses**: Include permission information for multiple resources
+- **UI rendering**: Determine visibility of multiple UI elements efficiently
+
 ## CLI Tool
 
 The CLI tool helps test and debug permission configurations from the command line.

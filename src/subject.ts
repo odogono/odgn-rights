@@ -150,4 +150,11 @@ export class Subject {
   execute(path: string, context?: ConditionContext): boolean {
     return this.has(path, Flags.EXECUTE, context);
   }
+
+  checkMany(
+    requests: Array<{ flags: Flags; path: string }>,
+    context?: ConditionContext
+  ): boolean[] {
+    return requests.map(req => this.has(req.path, req.flags, context));
+  }
 }

@@ -365,3 +365,215 @@ describe('Rights priority resolution', () => {
     expect(explanation.details[0]?.right).toBe(highPriorityRule);
   });
 });
+
+describe('Batch permission checks', () => {
+  it('checks multiple permissions at once', () => {
+    const rights = new Rights();
+    rights.allow('/users/*', Flags.READ);
+    rights.allow('/posts/*', Flags.WRITE);
+    rights.deny('/admin', Flags.ALL);
+
+    const results = rights.checkMany([
+      { flags: Flags.READ, path: '/users/1' },
+      { flags: Flags.WRITE, path: '/posts/1' },
+      { flags: Flags.ALL, path: '/admin' }
+    ]);
+
+    expect(results).toEqual([true, true, false]);
+  });
+
+  it('returns empty array for empty input', () => {
+    const rights = new Rights();
+    rights.allow('/users/*', Flags.READ);
+
+    const results = rights.checkMany([]);
+
+    expect(results).toEqual([]);
+  });
+
+  it('handles single item array', () => {
+    const rights = new Rights();
+    rights.allow('/users/*', Flags.READ);
+
+    const results = rights.checkMany([{ flags: Flags.READ, path: '/users/1' }]);
+
+    expect(results).toEqual([true]);
+  });
+
+  it('handles all allowed permissions', () => {
+    const rights = new Rights();
+    rights.allow('/', Flags.ALL);
+
+    const results = rights.checkMany([
+      { flags: Flags.READ, path: '/users' },
+      { flags: Flags.WRITE, path: '/posts' },
+      { flags: Flags.DELETE, path: '/admin' },
+      { flags: Flags.CREATE, path: '/files' },
+      { flags: Flags.EXECUTE, path: '/scripts' }
+    ]);
+
+    expect(results).toEqual([true, true, true, true, true]);
+  });
+
+  it('handles all denied permissions', () => {
+    const rights = new Rights();
+    rights.deny('/**', Flags.ALL);
+
+    const results = rights.checkMany([
+      { flags: Flags.READ, path: '/users' },
+      { flags: Flags.WRITE, path: '/posts' },
+      { flags: Flags.DELETE, path: '/admin' }
+    ]);
+
+    expect(results).toEqual([false, false, false]);
+  });
+
+  it('handles mixed results', () => {
+    const rights = new Rights();
+    rights.allow('/users/*', Flags.READ);
+    rights.deny('/admin/*', Flags.ALL);
+
+    const results = rights.checkMany([
+      { flags: Flags.READ, path: '/users/1' },
+      { flags: Flags.WRITE, path: '/users/2' },
+      { flags: Flags.READ, path: '/admin' },
+      { flags: Flags.READ, path: '/posts' }
+    ]);
+
+    expect(results).toEqual([true, false, false, false]);
+  });
+
+  it('handles composite flags', () => {
+    const rights = new Rights();
+    rights.allow('/full-access', Flags.READ, Flags.WRITE);
+
+    const results = rights.checkMany([
+      { flags: (Flags.READ | Flags.WRITE) as Flags, path: '/full-access' },
+      { flags: Flags.READ, path: '/full-access' },
+      { flags: Flags.WRITE, path: '/full-access' },
+      { flags: Flags.DELETE, path: '/full-access' }
+    ]);
+
+    expect(results).toEqual([true, true, true, false]);
+  });
+
+  it('handles Flags.ALL', () => {
+    const rights = new Rights();
+    rights.allow('/admin', Flags.ALL);
+    rights.deny('/user', Flags.DELETE);
+
+    const results = rights.checkMany([
+      { flags: Flags.ALL, path: '/admin' },
+      { flags: Flags.ALL, path: '/user' },
+      { flags: Flags.READ, path: '/user' }
+    ]);
+
+    expect(results).toEqual([true, false, false]);
+  });
+
+  it('respects shared context', () => {
+    const rights = new Rights();
+    rights.add(
+      new Right('/posts/*', {
+        allow: [Flags.WRITE],
+        condition: ctx =>
+          (ctx as { userId: string }).userId ===
+          (ctx as { ownerId: string }).ownerId
+      })
+    );
+
+    const results = rights.checkMany(
+      [
+        { flags: Flags.WRITE, path: '/posts/1' },
+        { flags: Flags.WRITE, path: '/posts/2' }
+      ],
+      { ownerId: 'user1', userId: 'user1' }
+    );
+
+    expect(results).toEqual([true, true]);
+  });
+
+  it('normalizes paths correctly', () => {
+    const rights = new Rights();
+    rights.allow('/users/*', Flags.READ);
+
+    const results = rights.checkMany([
+      { flags: Flags.READ, path: 'users/1' },
+      { flags: Flags.READ, path: 'users/2/' },
+      { flags: Flags.READ, path: '/users/3' }
+    ]);
+
+    expect(results).toEqual([true, true, true]);
+  });
+
+  it('maintains order with results matching input order', () => {
+    const rights = new Rights();
+    rights.allow('/allowed', Flags.READ);
+    rights.deny('/denied', Flags.READ);
+
+    const results = rights.checkMany([
+      { flags: Flags.READ, path: '/denied' },
+      { flags: Flags.READ, path: '/allowed' },
+      { flags: Flags.READ, path: '/denied' },
+      { flags: Flags.READ, path: '/allowed' }
+    ]);
+
+    expect(results).toEqual([false, true, false, true]);
+  });
+
+  it('is consistent with individual has() calls', () => {
+    const rights = new Rights();
+    rights.allow('/users/*', Flags.READ);
+    rights.allow('/posts/*', Flags.WRITE);
+    rights.deny('/admin', Flags.ALL);
+
+    const requests = [
+      { flags: Flags.READ, path: '/users/1' },
+      { flags: Flags.WRITE, path: '/posts/1' },
+      { flags: Flags.ALL, path: '/admin' },
+      { flags: Flags.READ, path: '/other' }
+    ];
+
+    const batchResults = rights.checkMany(requests);
+    const individualResults = requests.map(req =>
+      rights.has(req.path, req.flags)
+    );
+
+    expect(batchResults).toEqual(individualResults);
+  });
+
+  it('handles wildcard patterns correctly', () => {
+    const rights = new Rights();
+    rights.allow('/api/**', Flags.READ);
+
+    const results = rights.checkMany([
+      { flags: Flags.READ, path: '/api/users' },
+      { flags: Flags.READ, path: '/api/posts/1' },
+      { flags: Flags.READ, path: '/api/v1/users/123/posts/456' },
+      { flags: Flags.READ, path: '/external/users' }
+    ]);
+
+    expect(results).toEqual([true, true, true, false]);
+  });
+
+  it('handles priority correctly', () => {
+    const rights = new Rights();
+    rights.add(
+      new Right('/posts/123', { allow: [Flags.READ], deny: [Flags.WRITE] })
+    );
+    rights.add(
+      new Right('/posts/*', {
+        allow: [Flags.READ, Flags.WRITE],
+        priority: 100
+      })
+    );
+
+    const results = rights.checkMany([
+      { flags: Flags.READ, path: '/posts/123' },
+      { flags: Flags.WRITE, path: '/posts/123' },
+      { flags: Flags.WRITE, path: '/posts/456' }
+    ]);
+
+    expect(results).toEqual([true, true, true]);
+  });
+});
