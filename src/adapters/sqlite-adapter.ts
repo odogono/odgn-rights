@@ -129,6 +129,7 @@ export class SQLiteAdapter extends BaseAdapter {
       $deny_mask: row.deny_mask,
       $description: row.description,
       $path: row.path,
+      $priority: row.priority,
       $tags: row.tags,
       $valid_from: row.valid_from,
       $valid_until: row.valid_until
@@ -613,8 +614,8 @@ export class SQLiteAdapter extends BaseAdapter {
     } = this.tables;
 
     this.stmtInsertRight = this.db.prepare(`
-      INSERT INTO ${rights} (path, allow_mask, deny_mask, description, tags, valid_from, valid_until)
-      VALUES ($path, $allow_mask, $deny_mask, $description, $tags, $valid_from, $valid_until)
+      INSERT INTO ${rights} (path, allow_mask, deny_mask, priority, description, tags, valid_from, valid_until)
+      VALUES ($path, $allow_mask, $deny_mask, $priority, $description, $tags, $valid_from, $valid_until)
     `);
 
     this.stmtSelectRightById = this.db.prepare(`

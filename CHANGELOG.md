@@ -1,3 +1,16 @@
+## 0.5.0 - 2026-01-06
+
+### Added
+
+- **Explicit Rule Priority**: Rules can now have a `priority` value that overrides specificity-based resolution.
+  - Higher priority wins regardless of path specificity.
+  - Equal priorities fall back to specificity comparison.
+  - Negative priorities can deprioritize rules below the default (0).
+  - Text serialization format: `+rw:/path^100` (priority after path, using `^`).
+  - JSON serialization: optional `priority` field (omitted when 0).
+  - Full support in all database adapters (SQLite, PostgreSQL, Redis).
+  - CLI `explain` command now displays priority alongside specificity.
+
 ## 0.4.0 - 2026-01-06
 
 ### Added

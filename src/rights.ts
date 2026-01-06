@@ -7,6 +7,7 @@ export type RightJSON = {
   deny?: string;
   description?: string;
   path: string;
+  priority?: number;
   tags?: string[];
   validFrom?: string;
   validUntil?: string;
@@ -125,7 +126,15 @@ export class Rights {
     }
     const result = this.list
       .filter(r => r.matches(path))
-      .sort((a, b) => b.specificity() - a.specificity());
+      .sort((a, b) => {
+        // Priority first (higher wins)
+        const pDiff = b.priority - a.priority;
+        if (pDiff !== 0) {
+          return pDiff;
+        }
+        // Then specificity
+        return b.specificity() - a.specificity();
+      });
     this.matchCache.set(path, result);
     return result;
   }
@@ -238,6 +247,7 @@ export class Rights {
       const p = normalizePath(item.path);
       const init: RightInit = {
         description: item.description,
+        priority: item.priority,
         tags: item.tags
       };
       if (item.validFrom) {

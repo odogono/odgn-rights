@@ -98,6 +98,100 @@ rights.write('/posts/1', { userId: 'abc', ownerId: 'xyz' }); // false
 - `**` matches across segments (`/*/device/**`)
 - `?` matches a single character (no slash)
 
+## Rule Priority
+
+By default, rules are matched by **specificity** — the most specific matching rule wins. However, you can override this with explicit **priority** values.
+
+### How Priority Works
+
+1. **Higher priority wins** regardless of specificity
+2. **Equal priorities** fall back to specificity comparison
+3. **Default priority is 0** when not specified
+4. **Negative priorities** can deprioritize rules below the default
+
+```ts
+const rights = new Rights();
+
+// Specific path, default priority (0)
+rights.add(
+  new Right('/posts/123', {
+    allow: [Flags.READ],
+    deny: [Flags.WRITE]
+  })
+);
+
+// Wildcard path, but high priority (100) — this rule wins!
+rights.add(
+  new Right('/posts/*', {
+    allow: [Flags.READ, Flags.WRITE],
+    priority: 100
+  })
+);
+
+rights.write('/posts/123'); // true — high-priority wildcard rule wins
+```
+
+### Priority in Serialization
+
+Priority is included in both text and JSON serialization formats.
+
+**Text format** uses `^` after the path:
+
+```ts
+const right = new Right('/posts/*', {
+  allow: [Flags.WRITE],
+  priority: 100
+});
+right.toString(); // "+w:/posts/*^100"
+
+// With tags and time ranges
+// Format: [flags]:[path]^[priority]#[tags]@[validFrom]/[validUntil]
+Right.parse('+rw:/admin/*^50#secure');
+```
+
+**JSON format** includes an optional `priority` field:
+
+```json
+[
+  { "path": "/posts/*", "allow": "rw", "priority": 100 },
+  { "path": "/posts/123", "allow": "r", "deny": "w" }
+]
+```
+
+Priority is omitted from serialization when it equals 0 (the default).
+
+### Use Cases
+
+- **Emergency overrides**: Grant temporary high-priority access that bypasses normal rules
+- **Default deny rules**: Use negative priority for fallback deny rules
+- **Policy layers**: Implement organizational policies at different priority levels
+
+```ts
+// Low-priority default: deny all writes
+rights.add(
+  new Right('/**', {
+    deny: [Flags.WRITE],
+    priority: -100
+  })
+);
+
+// Normal priority: department-level permissions
+rights.add(
+  new Right('/dept/engineering/**', {
+    allow: [Flags.READ, Flags.WRITE]
+  })
+);
+
+// High priority: emergency maintenance access
+rights.add(
+  new Right('/system/**', {
+    allow: [Flags.ALL],
+    priority: 1000,
+    tags: ['emergency']
+  })
+);
+```
+
 ## JSON Round‑Trip
 
 ```ts

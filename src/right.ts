@@ -9,6 +9,7 @@ export type RightInit = {
   condition?: Condition;
   deny?: Flags[];
   description?: string;
+  priority?: number;
   tags?: string[];
   validFrom?: Date;
   validUntil?: Date;
@@ -24,6 +25,7 @@ export class Right {
   readonly validUntil?: Date;
   private readonly _tags: Set<string>;
   private readonly _specificity: number;
+  private readonly _priority: number;
   private readonly _re?: RegExp;
   private _dbId?: number;
 
@@ -34,6 +36,7 @@ export class Right {
     this.validFrom = init?.validFrom;
     this.validUntil = init?.validUntil;
     this._tags = new Set(init?.tags);
+    this._priority = init?.priority ?? 0;
 
     if (this.validFrom && this.validUntil && this.validFrom > this.validUntil) {
       throw new Error('validFrom must be before validUntil');
@@ -164,6 +167,10 @@ export class Right {
     const left = parts.join('');
     let res = `${left}:${this.path}`;
 
+    if (this._priority !== 0) {
+      res += `^${this._priority}`;
+    }
+
     if (this._tags.size > 0) {
       res += `#${this.tags.join(',')}`;
     }
@@ -182,6 +189,7 @@ export class Right {
     deny?: string;
     description?: string;
     path: string;
+    priority?: number;
     tags?: string[];
     validFrom?: string;
     validUntil?: string;
@@ -193,6 +201,7 @@ export class Right {
       deny?: string;
       description?: string;
       path: string;
+      priority?: number;
       tags?: string[];
       validFrom?: string;
       validUntil?: string;
@@ -205,6 +214,9 @@ export class Right {
     }
     if (this.description) {
       out.description = this.description;
+    }
+    if (this._priority !== 0) {
+      out.priority = this._priority;
     }
     if (this._tags.size > 0) {
       out.tags = this.tags;
@@ -234,6 +246,10 @@ export class Right {
   // Specificity score: more non-wildcard chars => more specific
   specificity(): number {
     return this._specificity;
+  }
+
+  get priority(): number {
+    return this._priority;
   }
 
   private calculateSpecificity(): number {
@@ -289,6 +305,7 @@ export class Right {
     let pathStr = '';
     let tagsStr = '';
     let timeStr = '';
+    let priorityStr = '';
 
     let pathEndIdx = s.length;
     if (atIdx !== -1) {
@@ -298,6 +315,14 @@ export class Right {
     if (hashIdx !== -1 && (atIdx === -1 || hashIdx < atIdx)) {
       tagsStr = s.slice(hashIdx + 1, pathEndIdx);
       pathEndIdx = hashIdx;
+    }
+
+    // Find ^ for priority (between path and #/@)
+    const pathStartIdx = colonIdx === -1 ? 0 : colonIdx + 1;
+    const caretIdx = s.indexOf('^', pathStartIdx);
+    if (caretIdx !== -1 && caretIdx < pathEndIdx) {
+      priorityStr = s.slice(caretIdx + 1, pathEndIdx);
+      pathEndIdx = caretIdx;
     }
 
     if (colonIdx === -1) {
@@ -328,6 +353,13 @@ export class Right {
 
     if (tagsStr) {
       init.tags = tagsStr.split(',').map(t => t.trim());
+    }
+
+    if (priorityStr) {
+      const p = Number.parseInt(priorityStr, 10);
+      if (!Number.isNaN(p)) {
+        init.priority = p;
+      }
     }
 
     const r = new Right(pathStr, init);

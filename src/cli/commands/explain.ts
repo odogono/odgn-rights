@@ -39,7 +39,9 @@ export const explainCommand = new Command('explain')
               details: explanation.details.map(d => ({
                 allowed: d.allowed,
                 flag: flagName(d.bit),
-                rule: d.right?.toString()
+                priority: d.right?.priority,
+                rule: d.right?.toString(),
+                specificity: d.right?.specificity()
               })),
               flag: options.flag,
               path: options.path
@@ -74,12 +76,22 @@ export const explainCommand = new Command('explain')
       // Show all matching rules
       const allRights = rights.allRights().filter(r => r.matches(options.path));
       if (allRights.length > 0) {
-        console.log(`\n${colors.bold('Matching rules (by specificity):')}`);
+        console.log(
+          `\n${colors.bold('Matching rules (by priority, then specificity):')}`
+        );
         allRights
-          .sort((a, b) => b.specificity() - a.specificity())
+          .sort((a, b) => {
+            const pDiff = b.priority - a.priority;
+            if (pDiff !== 0) {
+              return pDiff;
+            }
+            return b.specificity() - a.specificity();
+          })
           .forEach((r, i) => {
             console.log(`  ${i + 1}. ${colors.cyan(r.toString())}`);
-            console.log(`     Specificity: ${r.specificity()}`);
+            console.log(
+              `     Priority: ${r.priority}, Specificity: ${r.specificity()}`
+            );
             if (r.tags.length > 0) {
               console.log(`     Tags: ${r.tags.join(', ')}`);
             }

@@ -85,9 +85,9 @@ export class PostgresAdapter extends BaseAdapter {
 
     const [result] = await this.sql.unsafe(
       `
-      INSERT INTO ${rightsTable} (path, allow_mask, deny_mask, description, tags, valid_from, valid_until)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
-      ON CONFLICT (path, allow_mask, deny_mask, valid_from, valid_until)
+      INSERT INTO ${rightsTable} (path, allow_mask, deny_mask, priority, description, tags, valid_from, valid_until)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      ON CONFLICT (path, allow_mask, deny_mask, priority, valid_from, valid_until)
       DO UPDATE SET updated_at = NOW()
       RETURNING id
     `,
@@ -95,6 +95,7 @@ export class PostgresAdapter extends BaseAdapter {
         row.path,
         row.allow_mask,
         row.deny_mask,
+        row.priority,
         row.description,
         row.tags,
         row.valid_from,

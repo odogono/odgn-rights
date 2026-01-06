@@ -15,6 +15,7 @@ export type RightsRow = {
   description: string | null;
   id: number;
   path: string;
+  priority: number;
   tags: string | null; // JSON array string
   updated_at: string;
   valid_from: string | null; // ISO 8601 timestamp

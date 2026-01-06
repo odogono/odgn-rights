@@ -71,6 +71,7 @@ export class RedisAdapter extends BaseAdapter {
       right.path,
       right.allowMaskValue.toString(),
       right.denyMaskValue.toString(),
+      right.priority.toString(),
       right.validFrom?.toISOString() ?? 'null',
       right.validUntil?.toISOString() ?? 'null'
     ];
@@ -152,6 +153,7 @@ export class RedisAdapter extends BaseAdapter {
       description: row.description ?? '',
       id: id.toString(),
       path: row.path,
+      priority: row.priority.toString(),
       tags: row.tags ?? '',
       updated_at: now,
       valid_from: row.valid_from ?? '',
@@ -647,6 +649,7 @@ export class RedisAdapter extends BaseAdapter {
       description: data.description || null,
       id: Number.parseInt(data.id || '0', 10),
       path: data.path || '',
+      priority: Number.parseInt(data.priority || '0', 10),
       tags: data.tags || null,
       updated_at: data.updated_at || new Date().toISOString(),
       valid_from: data.valid_from || null,

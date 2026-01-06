@@ -190,3 +190,178 @@ describe('Rights.parse', () => {
     expect(parsed.create('/protected/file')).toBe(true);
   });
 });
+
+describe('Right priority', () => {
+  it('constructs with priority', () => {
+    const r = new Right('/x', { priority: 100 });
+    expect(r.priority).toBe(100);
+  });
+
+  it('defaults priority to 0', () => {
+    const r = new Right('/x');
+    expect(r.priority).toBe(0);
+  });
+
+  it('supports negative priority', () => {
+    const r = new Right('/x', { priority: -10 });
+    expect(r.priority).toBe(-10);
+  });
+
+  it('parses positive priority from text', () => {
+    const r = Right.parse('+rw:/path^50');
+    expect(r.priority).toBe(50);
+    expect(r.has(Flags.READ)).toBe(true);
+    expect(r.has(Flags.WRITE)).toBe(true);
+    expect(r.path).toBe('/path');
+  });
+
+  it('parses negative priority from text', () => {
+    const r = Right.parse('+rw:/path^-10');
+    expect(r.priority).toBe(-10);
+  });
+
+  it('parses priority with tags', () => {
+    const r = Right.parse('+rw:/path^100#admin');
+    expect(r.priority).toBe(100);
+    expect(r.tags).toEqual(['admin']);
+  });
+
+  it('parses priority with time range', () => {
+    const r = Right.parse('+rw:/path^100@2025-01-01T00:00:00.000Z/*');
+    expect(r.priority).toBe(100);
+    expect(r.validFrom?.toISOString()).toBe('2025-01-01T00:00:00.000Z');
+  });
+
+  it('parses priority with tags and time range', () => {
+    const r = Right.parse(
+      '+rw:/path^100#admin,user@2025-01-01T00:00:00.000Z/2025-12-31T23:59:59.999Z'
+    );
+    expect(r.priority).toBe(100);
+    expect(r.tags).toEqual(['admin', 'user']);
+    expect(r.validFrom?.toISOString()).toBe('2025-01-01T00:00:00.000Z');
+    expect(r.validUntil?.toISOString()).toBe('2025-12-31T23:59:59.999Z');
+  });
+
+  it('serializes non-zero priority to string', () => {
+    const r = new Right('/x', { allow: [Flags.READ], priority: 50 });
+    expect(r.toString()).toBe('+r:/x^50');
+  });
+
+  it('omits zero priority from string', () => {
+    const r = new Right('/x', { allow: [Flags.READ], priority: 0 });
+    expect(r.toString()).toBe('+r:/x');
+    expect(r.toString()).not.toContain('^');
+  });
+
+  it('omits priority from string when not set', () => {
+    const r = new Right('/x', { allow: [Flags.READ] });
+    expect(r.toString()).toBe('+r:/x');
+    expect(r.toString()).not.toContain('^');
+  });
+
+  it('serializes priority to JSON', () => {
+    const r = new Right('/x', { allow: [Flags.READ], priority: 100 });
+    expect(r.toJSON()).toEqual({
+      allow: 'r',
+      path: '/x',
+      priority: 100
+    });
+  });
+
+  it('omits zero priority from JSON', () => {
+    const r = new Right('/x', { allow: [Flags.READ], priority: 0 });
+    const json = r.toJSON();
+    expect(json.priority).toBeUndefined();
+  });
+
+  it('round-trips priority through JSON', () => {
+    const rights = Rights.fromJSON([{ allow: 'r', path: '/x', priority: 100 }]);
+    const json = rights.toJSON();
+    expect(json[0]?.priority).toBe(100);
+  });
+
+  it('round-trips priority through text', () => {
+    const r = Right.parse('+rw:/path^50#tag');
+    expect(r.toString()).toBe('+rw:/path^50#tag');
+  });
+});
+
+describe('Rights priority resolution', () => {
+  it('priority overrides specificity', () => {
+    const rights = new Rights();
+    // More specific path but lower priority
+    rights.add(
+      new Right('/posts/123', { allow: [Flags.READ], deny: [Flags.WRITE] })
+    );
+    // Less specific path but higher priority
+    rights.add(
+      new Right('/posts/*', {
+        allow: [Flags.READ, Flags.WRITE],
+        priority: 100
+      })
+    );
+
+    // Higher priority wildcard rule should win
+    expect(rights.read('/posts/123')).toBe(true);
+    expect(rights.write('/posts/123')).toBe(true);
+  });
+
+  it('equal priority falls back to specificity', () => {
+    const rights = new Rights();
+    // More specific path, same priority
+    rights.add(
+      new Right('/posts/123', {
+        allow: [Flags.READ],
+        deny: [Flags.WRITE],
+        priority: 50
+      })
+    );
+    // Less specific path, same priority
+    rights.add(
+      new Right('/posts/*', {
+        allow: [Flags.READ, Flags.WRITE],
+        priority: 50
+      })
+    );
+
+    // Equal priority, more specific rule should win
+    expect(rights.read('/posts/123')).toBe(true);
+    expect(rights.write('/posts/123')).toBe(false);
+  });
+
+  it('negative priority deprioritizes rules', () => {
+    const rights = new Rights();
+    // More specific path but negative priority
+    rights.add(
+      new Right('/posts/123', {
+        allow: [Flags.READ],
+        deny: [Flags.WRITE],
+        priority: -10
+      })
+    );
+    // Less specific path, default priority (0)
+    rights.add(new Right('/posts/*', { allow: [Flags.READ, Flags.WRITE] }));
+
+    // Default priority (0) beats negative priority (-10)
+    expect(rights.read('/posts/123')).toBe(true);
+    expect(rights.write('/posts/123')).toBe(true);
+  });
+
+  it('explains which rule matched with priority', () => {
+    const rights = new Rights();
+    const lowPriorityRule = new Right('/posts/123', {
+      deny: [Flags.WRITE],
+      priority: -10
+    });
+    const highPriorityRule = new Right('/posts/*', {
+      allow: [Flags.WRITE],
+      priority: 100
+    });
+    rights.add(lowPriorityRule);
+    rights.add(highPriorityRule);
+
+    const explanation = rights.explain('/posts/123', Flags.WRITE);
+    expect(explanation.allowed).toBe(true);
+    expect(explanation.details[0]?.right).toBe(highPriorityRule);
+  });
+});

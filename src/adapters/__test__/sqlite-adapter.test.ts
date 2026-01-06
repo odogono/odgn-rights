@@ -87,6 +87,42 @@ describe('SQLiteAdapter', () => {
       const rights = await adapter.loadRightsByPath('/users/*');
       expect(rights.allRights()).toHaveLength(2);
     });
+
+    test('priority persistence round-trip', async () => {
+      const right = new Right('/priority-test', {
+        allow: [Flags.READ],
+        priority: 100
+      });
+
+      const id = await adapter.saveRight(right);
+      const loaded = await adapter.loadRight(id);
+
+      expect(loaded).not.toBeNull();
+      expect(loaded!.priority).toBe(100);
+    });
+
+    test('negative priority persistence', async () => {
+      const right = new Right('/negative-priority', {
+        allow: [Flags.READ],
+        priority: -50
+      });
+
+      const id = await adapter.saveRight(right);
+      const loaded = await adapter.loadRight(id);
+
+      expect(loaded).not.toBeNull();
+      expect(loaded!.priority).toBe(-50);
+    });
+
+    test('default priority is 0', async () => {
+      const right = new Right('/default-priority', { allow: [Flags.READ] });
+
+      const id = await adapter.saveRight(right);
+      const loaded = await adapter.loadRight(id);
+
+      expect(loaded).not.toBeNull();
+      expect(loaded!.priority).toBe(0);
+    });
   });
 
   describe('Role operations', () => {

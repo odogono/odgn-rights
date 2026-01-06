@@ -71,6 +71,7 @@ export abstract class BaseAdapter implements DatabaseAdapter {
     deny_mask: right.denyMaskValue,
     description: right.description ?? null,
     path: right.path,
+    priority: right.priority,
     tags: this.serializeTags(right.tags),
     valid_from: right.validFrom?.toISOString() ?? null,
     valid_until: right.validUntil?.toISOString() ?? null
@@ -84,6 +85,7 @@ export abstract class BaseAdapter implements DatabaseAdapter {
       allow: this.maskToFlags(row.allow_mask),
       deny: this.maskToFlags(row.deny_mask),
       description: row.description ?? undefined,
+      priority: row.priority,
       tags: this.deserializeTags(row.tags),
       validFrom: row.valid_from ? new Date(row.valid_from) : undefined,
       validUntil: row.valid_until ? new Date(row.valid_until) : undefined

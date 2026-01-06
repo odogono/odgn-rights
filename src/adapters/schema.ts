@@ -30,13 +30,14 @@ CREATE TABLE IF NOT EXISTS ${tables.rights} (
   path TEXT NOT NULL,
   allow_mask INTEGER NOT NULL DEFAULT 0,
   deny_mask INTEGER NOT NULL DEFAULT 0,
+  priority INTEGER NOT NULL DEFAULT 0,
   description TEXT,
   tags TEXT,
   valid_from TEXT,
   valid_until TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-  UNIQUE(path, allow_mask, deny_mask, valid_from, valid_until)
+  UNIQUE(path, allow_mask, deny_mask, priority, valid_from, valid_until)
 );
 
 -- Roles table
@@ -107,13 +108,14 @@ CREATE TABLE IF NOT EXISTS ${tables.rights} (
   path TEXT NOT NULL,
   allow_mask INTEGER NOT NULL DEFAULT 0,
   deny_mask INTEGER NOT NULL DEFAULT 0,
+  priority INTEGER NOT NULL DEFAULT 0,
   description TEXT,
   tags TEXT,
   valid_from TIMESTAMPTZ,
   valid_until TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE(path, allow_mask, deny_mask, valid_from, valid_until)
+  UNIQUE(path, allow_mask, deny_mask, priority, valid_from, valid_until)
 );
 
 -- Roles table
