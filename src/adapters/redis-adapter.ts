@@ -573,7 +573,20 @@ export class RedisAdapter extends BaseAdapter {
     return true;
   }
 
-  async findSubjectsWithAccess(
+  protected async getAllSubjectIdentifiers(): Promise<string[]> {
+    if (!this.redis) {
+      throw new Error('Not connected');
+    }
+
+    const allSubjectsKey = this.key('subjects', '_all');
+    return this.redis.smembers(allSubjectsKey);
+  }
+
+  /**
+   * Optimized findSubjectsWithAccess using batch loading with Redis pipeline.
+   * Reduces N+1 queries to a constant number of Redis operations regardless of subject count.
+   */
+  override async findSubjectsWithAccess(
     pathPattern: string,
     flags: Flags
   ): Promise<string[]> {
@@ -581,14 +594,153 @@ export class RedisAdapter extends BaseAdapter {
       throw new Error('Not connected');
     }
 
-    const matchingSubjects: string[] = [];
+    // Get all subject identifiers
     const allSubjectsKey = this.key('subjects', '_all');
-
     const subjectIdentifiers = await this.redis.smembers(allSubjectsKey);
 
+    if (subjectIdentifiers.length === 0) {
+      return [];
+    }
+
+    // Batch load all subject roles using pipeline
+    const rolesPipeline = this.redis.pipeline();
     for (const identifier of subjectIdentifiers) {
-      const subject = await this.loadSubject(identifier);
-      if (subject && subject.has(pathPattern, flags)) {
+      rolesPipeline.smembers(this.key('subjects', identifier, 'roles'));
+    }
+    const rolesResults = await rolesPipeline.exec();
+
+    // Build subject -> roles mapping
+    const subjectRolesMap = new Map<string, string[]>();
+    for (let i = 0; i < subjectIdentifiers.length; i++) {
+      const identifier = subjectIdentifiers[i]!;
+      const result = rolesResults?.[i];
+      if (result && !result[0]) {
+        subjectRolesMap.set(identifier, result[1] as string[]);
+      } else {
+        subjectRolesMap.set(identifier, []);
+      }
+    }
+
+    // Collect all unique role names
+    const allRoleNames = new Set<string>();
+    for (const roles of subjectRolesMap.values()) {
+      for (const roleName of roles) {
+        allRoleNames.add(roleName);
+      }
+    }
+
+    // Batch load all role rights using pipeline
+    const roleRightIdsPipeline = this.redis.pipeline();
+    const roleNamesArray = Array.from(allRoleNames);
+    for (const roleName of roleNamesArray) {
+      roleRightIdsPipeline.smembers(this.key('roles', roleName, 'rights'));
+    }
+    const roleRightIdsResults = await roleRightIdsPipeline.exec();
+
+    // Build role -> right IDs mapping
+    const roleRightIdsMap = new Map<string, string[]>();
+    for (let i = 0; i < roleNamesArray.length; i++) {
+      const roleName = roleNamesArray[i]!;
+      const result = roleRightIdsResults?.[i];
+      if (result && !result[0]) {
+        roleRightIdsMap.set(roleName, result[1] as string[]);
+      } else {
+        roleRightIdsMap.set(roleName, []);
+      }
+    }
+
+    // Batch load all subject direct rights using pipeline
+    const directRightsPipeline = this.redis.pipeline();
+    for (const identifier of subjectIdentifiers) {
+      directRightsPipeline.smembers(this.key('subjects', identifier, 'rights'));
+    }
+    const directRightsResults = await directRightsPipeline.exec();
+
+    // Build subject -> direct right IDs mapping
+    const subjectDirectRightIdsMap = new Map<string, string[]>();
+    for (let i = 0; i < subjectIdentifiers.length; i++) {
+      const identifier = subjectIdentifiers[i]!;
+      const result = directRightsResults?.[i];
+      if (result && !result[0]) {
+        subjectDirectRightIdsMap.set(identifier, result[1] as string[]);
+      } else {
+        subjectDirectRightIdsMap.set(identifier, []);
+      }
+    }
+
+    // Collect all unique right IDs
+    const allRightIds = new Set<string>();
+    for (const rightIds of roleRightIdsMap.values()) {
+      for (const id of rightIds) {
+        allRightIds.add(id);
+      }
+    }
+    for (const rightIds of subjectDirectRightIdsMap.values()) {
+      for (const id of rightIds) {
+        allRightIds.add(id);
+      }
+    }
+
+    // Batch load all rights using pipeline
+    const rightsPipeline = this.redis.pipeline();
+    const rightIdsArray = Array.from(allRightIds);
+    for (const rightId of rightIdsArray) {
+      rightsPipeline.hgetall(this.key('rights', rightId));
+    }
+    const rightsResults = await rightsPipeline.exec();
+
+    // Build right ID -> Right mapping
+    const rightsMap = new Map<string, Right>();
+    for (let i = 0; i < rightIdsArray.length; i++) {
+      const rightId = rightIdsArray[i]!;
+      const result = rightsResults?.[i];
+      if (result && !result[0] && result[1]) {
+        const data = result[1] as Record<string, string>;
+        if (Object.keys(data).length > 0) {
+          const row = this.hashToRightsRow(data);
+          rightsMap.set(rightId, this.rowToRight(row));
+        }
+      }
+    }
+
+    // Build role -> Rights mapping
+    const roleRightsMap = new Map<string, Rights>();
+    for (const [roleName, rightIds] of roleRightIdsMap) {
+      const rights = new Rights();
+      for (const rightId of rightIds) {
+        const right = rightsMap.get(rightId);
+        if (right) {
+          rights.add(right);
+        }
+      }
+      roleRightsMap.set(roleName, rights);
+    }
+
+    // Now construct Subject objects and check access
+    const matchingSubjects: string[] = [];
+
+    for (const identifier of subjectIdentifiers) {
+      const subject = new Subject();
+
+      // Add roles with their rights
+      const roleNames = subjectRolesMap.get(identifier) ?? [];
+      for (const roleName of roleNames) {
+        const roleRights = roleRightsMap.get(roleName) ?? new Rights();
+        const role = new Role(roleName, roleRights);
+        subject.memberOf(role);
+      }
+
+      // Add direct rights
+      const directRightIds = subjectDirectRightIdsMap.get(identifier) ?? [];
+      for (const rightId of directRightIds) {
+        const right = rightsMap.get(rightId);
+        if (right) {
+          subject.rights.add(right);
+        }
+      }
+
+      // Check if subject has the requested access
+      if (subject.has(pathPattern, flags)) {
         matchingSubjects.push(identifier);
       }
     }

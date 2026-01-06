@@ -168,10 +168,37 @@ export abstract class BaseAdapter implements DatabaseAdapter {
   abstract saveSubject(identifier: string, subject: Subject): Promise<number>;
   abstract loadSubject(identifier: string): Promise<Subject | null>;
   abstract deleteSubject(identifier: string): Promise<boolean>;
-  abstract findSubjectsWithAccess(
+
+  /**
+   * Get all subject identifiers from the database.
+   * Used by findSubjectsWithAccess and can be overridden for optimization.
+   */
+  protected abstract getAllSubjectIdentifiers(): Promise<string[]>;
+
+  /**
+   * Find all subject identifiers that have access to a specific path with given flags.
+   * Default implementation uses getAllSubjectIdentifiers + loadSubject.
+   * Subclasses can override with optimized batch loading implementations.
+   * @param pathPattern The path pattern to check (supports wildcards)
+   * @param flags The flags to check for
+   * @returns Array of subject identifiers that have access
+   */
+  async findSubjectsWithAccess(
     pathPattern: string,
     flags: Flags
-  ): Promise<string[]>;
+  ): Promise<string[]> {
+    const allIdentifiers = await this.getAllSubjectIdentifiers();
+    const matchingSubjects: string[] = [];
+
+    for (const identifier of allIdentifiers) {
+      const subject = await this.loadSubject(identifier);
+      if (subject?.has(pathPattern, flags)) {
+        matchingSubjects.push(identifier);
+      }
+    }
+
+    return matchingSubjects;
+  }
 
   abstract clear(): Promise<void>;
   abstract transaction<T>(
