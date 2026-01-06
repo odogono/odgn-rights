@@ -228,7 +228,7 @@ describe('SQLiteAdapter', () => {
     });
 
     test('findSubjectsWithAccess returns subjects with matching rights', async () => {
-      const { RoleRegistry, Subject, Right } = await import('../../index');
+      const { Right, RoleRegistry, Subject } = await import('../../index');
 
       const registry = new RoleRegistry();
       const admin = registry.define('admin');

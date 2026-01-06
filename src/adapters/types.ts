@@ -137,6 +137,14 @@ export type DatabaseAdapter = {
   disconnect(): Promise<void>;
 
   /**
+   * Find all subject identifiers that have access to a specific path with given flags
+   * @param pathPattern The path pattern to check (supports wildcards)
+   * @param flags The flags to check for
+   * @returns Array of subject identifiers that have access
+   */
+  findSubjectsWithAccess(pathPattern: string, flags: Flags): Promise<string[]>;
+
+  /**
    * Load all roles into a new RoleRegistry
    */
   loadRegistry(): Promise<RoleRegistry>;
@@ -146,14 +154,14 @@ export type DatabaseAdapter = {
    */
   loadRight(id: number): Promise<Right | null>;
 
+  // -------------------------------------------------------------------------
+  // Role Operations
+  // -------------------------------------------------------------------------
+
   /**
    * Load all rights from the database
    */
   loadRights(): Promise<Rights>;
-
-  // -------------------------------------------------------------------------
-  // Role Operations
-  // -------------------------------------------------------------------------
 
   /**
    * Load rights matching a path pattern
@@ -170,28 +178,28 @@ export type DatabaseAdapter = {
    */
   loadRoles(): Promise<Role[]>;
 
+  // -------------------------------------------------------------------------
+  // RoleRegistry Operations
+  // -------------------------------------------------------------------------
+
   /**
    * Load a subject by its external identifier
    */
   loadSubject(identifier: string): Promise<Subject | null>;
-
-  // -------------------------------------------------------------------------
-  // RoleRegistry Operations
-  // -------------------------------------------------------------------------
 
   /**
    * Run database migrations to create or update schema
    */
   migrate(): Promise<void>;
 
+  // -------------------------------------------------------------------------
+  // Subject Operations
+  // -------------------------------------------------------------------------
+
   /**
    * Save an entire role registry to the database
    */
   saveRegistry(registry: RoleRegistry): Promise<void>;
-
-  // -------------------------------------------------------------------------
-  // Subject Operations
-  // -------------------------------------------------------------------------
 
   /**
    * Save a single right to the database
@@ -205,15 +213,15 @@ export type DatabaseAdapter = {
    */
   saveRights(rights: Rights): Promise<number[]>;
 
+  // -------------------------------------------------------------------------
+  // Utility
+  // -------------------------------------------------------------------------
+
   /**
    * Save a role and its rights to the database
    * @returns The database ID of the saved role
    */
   saveRole(role: Role): Promise<number>;
-
-  // -------------------------------------------------------------------------
-  // Utility
-  // -------------------------------------------------------------------------
 
   /**
    * Save a subject with its roles and direct rights
@@ -222,14 +230,6 @@ export type DatabaseAdapter = {
    * @returns The database ID of the saved subject
    */
   saveSubject(identifier: string, subject: Subject): Promise<number>;
-
-  /**
-   * Find all subject identifiers that have access to a specific path with given flags
-   * @param pathPattern The path pattern to check (supports wildcards)
-   * @param flags The flags to check for
-   * @returns Array of subject identifiers that have access
-   */
-  findSubjectsWithAccess(pathPattern: string, flags: Flags): Promise<string[]>;
 
   // -------------------------------------------------------------------------
   // Transaction Support

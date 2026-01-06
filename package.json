@@ -44,6 +44,10 @@
     "./adapters/redis": {
       "types": "./dist/adapters/redis-adapter.d.ts",
       "import": "./dist/adapters/redis-adapter.js"
+    },
+    "./integrations/elysia": {
+      "types": "./dist/integrations/elysia.d.ts",
+      "import": "./dist/integrations/elysia.js"
     }
   },
   "files": [
@@ -76,13 +80,20 @@
     "@types/bun": "latest",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
+    "elysia": "^1.4.21",
     "eslint": "^9",
     "knip": "^5.80.0",
     "prettier": "^3",
     "testcontainers": "^11.11.0"
   },
   "peerDependencies": {
-    "typescript": "^5"
+    "typescript": "^5",
+    "elysia": "^1.0.0"
+  },
+  "peerDependenciesMeta": {
+    "elysia": {
+      "optional": true
+    }
   },
   "publishConfig": {
     "access": "public"
@@ -90,7 +101,7 @@
   "sideEffects": false,
   "dependencies": {
     "commander": "^14.0.2",
-    "ioredis": "^5.6.1",
+    "ioredis": "^5.9.0",
     "jotai": "^2.16.1",
     "react": "^19.2.3",
     "react-dom": "^19.2.3"

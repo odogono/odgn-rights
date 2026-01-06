@@ -614,9 +614,9 @@ export class PostgresAdapter extends BaseAdapter {
     // Build subject -> roles mapping
     const subjectRolesMap = new Map<number, string[]>();
     for (const row of subjectRoleRows) {
-      const { subject_id, role_name } = row as {
-        subject_id: number;
+      const { role_name, subject_id } = row as {
         role_name: string;
+        subject_id: number;
       };
       if (!subjectRolesMap.has(subject_id)) {
         subjectRolesMap.set(subject_id, []);

@@ -583,7 +583,7 @@ export class SQLiteAdapter extends BaseAdapter {
          FROM ${subjectRoles} sr
          JOIN ${roles} r ON sr.role_id = r.id`
       )
-      .all() as Array<{ subject_id: number; role_name: string }>;
+      .all() as Array<{ role_name: string; subject_id: number }>;
 
     // Batch load all subject direct rights
     const subjectRightRows = this.db

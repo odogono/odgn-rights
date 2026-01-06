@@ -4,7 +4,6 @@ import {
   Flags,
   Right,
   Rights,
-  Role,
   RoleRegistry,
   Subject,
   SubjectRegistry
@@ -221,7 +220,9 @@ describe('SubjectRegistry', () => {
         new Right('/posts/*', {
           allow: [Flags.WRITE],
           condition: ctx => {
-            if (!ctx) return false;
+            if (!ctx) {
+              return false;
+            }
             return (
               (ctx as { userId: string }).userId ===
               (ctx as { ownerId: string }).ownerId
