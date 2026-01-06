@@ -33,14 +33,21 @@ export type { SQLiteAdapterOptions } from './sqlite-adapter';
 export { PostgresAdapter } from './postgres-adapter';
 export type { PostgresAdapterOptions } from './postgres-adapter';
 
+// Redis adapter
+export { RedisAdapter } from './redis-adapter';
+export type { RedisAdapterOptions } from './redis-adapter';
+
 // Factory functions
 export {
   createPostgresRegistry,
   createPostgresRights,
+  createRedisRegistry,
+  createRedisRights,
   createSQLiteRegistry,
   createSQLiteRights
 } from './factories';
 export type {
   CreatePostgresRegistryOptions,
+  CreateRedisRightsOptions,
   CreateSQLiteRightsOptions
 } from './factories';

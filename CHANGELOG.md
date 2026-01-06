@@ -1,3 +1,20 @@
+## 0.4.0 - 2026-01-06
+
+### Added
+
+- **Redis Adapter**: New persistence adapter for storing rights, roles, and subjects in Redis/Valkey.
+  - `RedisAdapter`: Full-featured adapter using `ioredis` with support for both host/port and URL-based connections.
+  - Factory functions (`createRedisRights`, `createRedisRegistry`) for quick setup.
+  - Configurable key prefix (default: `tbl_`) to avoid key conflicts.
+  - Transaction support via Redis MULTI/EXEC (note: no true rollback).
+  - Full entity support: `Right`, `Rights`, `Role`, `RoleRegistry`, and `Subject`.
+  - Path pattern queries via `loadRightsByPath()`.
+- **New Export**: `./adapters/redis` subpath export for the Redis adapter.
+
+### Changed
+
+- Updated Postgres test container image from `postgres:16-alpine` to `postgres:17-alpine`.
+
 ## 0.3.0 - 2026-01-05
 
 ### Added

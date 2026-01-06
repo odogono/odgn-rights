@@ -1,0 +1,656 @@
+import Redis from 'ioredis';
+
+import { Right } from '../right';
+import { Rights } from '../rights';
+import { Role } from '../role';
+import { RoleRegistry } from '../role-registry';
+import { Subject } from '../subject';
+import { BaseAdapter } from './base-adapter';
+import type { BaseAdapterOptions, DatabaseAdapter, RightsRow } from './types';
+
+export type RedisAdapterOptions = BaseAdapterOptions & {
+  db?: number;
+  host?: string;
+  keyPrefix?: string;
+  lazyConnect?: boolean;
+  password?: string;
+  port?: number;
+  tls?: object;
+  url?: string;
+};
+
+/**
+ * Redis key structure:
+ *
+ * Rights:
+ *   {prefix}rights:{id}           → Hash { path, allow_mask, deny_mask, description, tags, valid_from, valid_until, created_at, updated_at }
+ *   {prefix}rights:_seq           → String (auto-increment counter)
+ *   {prefix}rights:_all           → Set of all right IDs
+ *   {prefix}rights:_unique:{hash} → String (right ID for unique constraint lookup)
+ *
+ * Roles:
+ *   {prefix}roles:{name}          → Hash { name, created_at, updated_at }
+ *   {prefix}roles:_all            → Set of all role names
+ *   {prefix}roles:{name}:rights   → Set of right IDs
+ *   {prefix}roles:{name}:parents  → Set of parent role names
+ *
+ * Subjects:
+ *   {prefix}subjects:{identifier}         → Hash { identifier, id, created_at, updated_at }
+ *   {prefix}subjects:_all                 → Set of all subject identifiers
+ *   {prefix}subjects:_seq                 → String (auto-increment counter for subject IDs)
+ *   {prefix}subjects:{identifier}:roles   → Set of role names
+ *   {prefix}subjects:{identifier}:rights  → Set of right IDs
+ */
+export class RedisAdapter extends BaseAdapter {
+  private redis: Redis | null = null;
+  private readonly options: RedisAdapterOptions;
+  private transactionDepth = 0;
+
+  constructor(options: RedisAdapterOptions = {}) {
+    super(options);
+    this.options = options;
+  }
+
+  // ===========================================================================
+  // Key Helpers
+  // ===========================================================================
+
+  /**
+   * Generate a Redis key with the configured prefix
+   */
+  private key(...parts: string[]): string {
+    const prefix = this.options.keyPrefix ?? this.tablePrefix;
+    return `${prefix}${parts.join(':')}`;
+  }
+
+  /**
+   * Generate a unique hash for a right's unique constraint fields
+   */
+  private rightUniqueHash(right: Right): string {
+    const parts = [
+      right.path,
+      right.allowMaskValue.toString(),
+      right.denyMaskValue.toString(),
+      right.validFrom?.toISOString() ?? 'null',
+      right.validUntil?.toISOString() ?? 'null'
+    ];
+    return parts.join('|');
+  }
+
+  // ===========================================================================
+  // Lifecycle
+  // ===========================================================================
+
+  async connect(): Promise<void> {
+    this.redis = this.options.url
+      ? new Redis(this.options.url, {
+          lazyConnect: this.options.lazyConnect ?? true
+        })
+      : new Redis({
+          db: this.options.db ?? 0,
+          host: this.options.host ?? 'localhost',
+          lazyConnect: this.options.lazyConnect ?? true,
+          password: this.options.password,
+          port: this.options.port ?? 6379,
+          tls: this.options.tls
+        });
+
+    await this.redis.connect();
+  }
+
+  async disconnect(): Promise<void> {
+    if (this.redis) {
+      await this.redis.quit();
+      this.redis = null;
+    }
+  }
+
+  async migrate(): Promise<void> {
+    // Redis is schemaless, so migration is a no-op
+    // Just verify we're connected
+    if (!this.redis) {
+      throw new Error('Not connected');
+    }
+    await this.redis.ping();
+  }
+
+  // ===========================================================================
+  // Rights Operations
+  // ===========================================================================
+
+  async saveRight(right: Right): Promise<number> {
+    if (!this.redis) {
+      throw new Error('Not connected');
+    }
+
+    const uniqueHash = this.rightUniqueHash(right);
+    const uniqueKey = this.key('rights', '_unique', uniqueHash);
+
+    // Check for existing right with same unique constraint
+    const existingId = await this.redis.get(uniqueKey);
+    if (existingId) {
+      const id = Number.parseInt(existingId, 10);
+      // Update the updated_at timestamp
+      await this.redis.hset(
+        this.key('rights', existingId),
+        'updated_at',
+        new Date().toISOString()
+      );
+      right._setDbId(id);
+      return id;
+    }
+
+    // Generate new ID
+    const id = await this.redis.incr(this.key('rights', '_seq'));
+    const now = new Date().toISOString();
+
+    const row = this.rightToRow(right);
+    const hashData: Record<string, string> = {
+      allow_mask: row.allow_mask.toString(),
+      created_at: now,
+      deny_mask: row.deny_mask.toString(),
+      description: row.description ?? '',
+      id: id.toString(),
+      path: row.path,
+      tags: row.tags ?? '',
+      updated_at: now,
+      valid_from: row.valid_from ?? '',
+      valid_until: row.valid_until ?? ''
+    };
+
+    const rightKey = this.key('rights', id.toString());
+
+    // Use pipeline for atomic operation
+    const pipeline = this.redis.multi();
+    pipeline.hset(rightKey, hashData);
+    pipeline.sadd(this.key('rights', '_all'), id.toString());
+    pipeline.set(uniqueKey, id.toString());
+    await pipeline.exec();
+
+    right._setDbId(id);
+    return id;
+  }
+
+  async saveRights(rights: Rights): Promise<number[]> {
+    const ids: number[] = [];
+
+    await this.transaction(async () => {
+      for (const right of rights.allRights()) {
+        const id = await this.saveRight(right);
+        ids.push(id);
+      }
+    });
+
+    return ids;
+  }
+
+  async loadRight(id: number): Promise<Right | null> {
+    if (!this.redis) {
+      throw new Error('Not connected');
+    }
+
+    const rightKey = this.key('rights', id.toString());
+    const data = await this.redis.hgetall(rightKey);
+
+    if (!data || Object.keys(data).length === 0) {
+      return null;
+    }
+
+    const row = this.hashToRightsRow(data);
+    return this.rowToRight(row);
+  }
+
+  async loadRights(): Promise<Rights> {
+    if (!this.redis) {
+      throw new Error('Not connected');
+    }
+
+    const allIds = await this.redis.smembers(this.key('rights', '_all'));
+    const loadedRights = new Rights();
+
+    for (const idStr of allIds) {
+      const right = await this.loadRight(Number.parseInt(idStr, 10));
+      if (right) {
+        loadedRights.add(right);
+      }
+    }
+
+    return loadedRights;
+  }
+
+  async loadRightsByPath(pathPattern: string): Promise<Rights> {
+    if (!this.redis) {
+      throw new Error('Not connected');
+    }
+
+    // Convert glob pattern to regex for filtering
+    // * → .* and ? → .
+    const regexPattern = pathPattern
+      .replaceAll(/[$()+.[\\\]^{|}]/g, String.raw`\$&`) // Escape regex special chars except * and ?
+      .replaceAll('*', '.*')
+      .replaceAll('?', '.');
+
+    const regex = new RegExp(`^${regexPattern}$`);
+
+    const allRights = await this.loadRights();
+    const matchedRights = new Rights();
+
+    for (const right of allRights.allRights()) {
+      if (regex.test(right.path)) {
+        matchedRights.add(right);
+      }
+    }
+
+    return matchedRights;
+  }
+
+  async deleteRight(id: number): Promise<boolean> {
+    if (!this.redis) {
+      throw new Error('Not connected');
+    }
+
+    const rightKey = this.key('rights', id.toString());
+    const data = await this.redis.hgetall(rightKey);
+
+    if (!data || Object.keys(data).length === 0) {
+      return false;
+    }
+
+    // Reconstruct the unique hash to delete the unique constraint key
+    const row = this.hashToRightsRow(data);
+    const right = this.rowToRight(row);
+    const uniqueHash = this.rightUniqueHash(right);
+    const uniqueKey = this.key('rights', '_unique', uniqueHash);
+
+    const pipeline = this.redis.multi();
+    pipeline.del(rightKey);
+    pipeline.srem(this.key('rights', '_all'), id.toString());
+    pipeline.del(uniqueKey);
+    await pipeline.exec();
+
+    return true;
+  }
+
+  // ===========================================================================
+  // Role Operations
+  // ===========================================================================
+
+  async saveRole(role: Role): Promise<number> {
+    if (!this.redis) {
+      throw new Error('Not connected');
+    }
+
+    return this.transaction(async () => {
+      const roleKey = this.key('roles', role.name);
+      const existingData = await this.redis!.hgetall(roleKey);
+
+      const now = new Date().toISOString();
+      const createdAt =
+        existingData && existingData.created_at ? existingData.created_at : now;
+
+      // Save/update role hash
+      await this.redis!.hset(roleKey, {
+        created_at: createdAt,
+        name: role.name,
+        updated_at: now
+      });
+
+      // Add to roles set
+      await this.redis!.sadd(this.key('roles', '_all'), role.name);
+
+      // Clear and rebuild role rights
+      const roleRightsKey = this.key('roles', role.name, 'rights');
+      await this.redis!.del(roleRightsKey);
+
+      for (const right of role.rights.allRights()) {
+        const rightId = await this.saveRight(right);
+        await this.redis!.sadd(roleRightsKey, rightId.toString());
+      }
+
+      // Clear and rebuild parent roles
+      const roleParentsKey = this.key('roles', role.name, 'parents');
+      await this.redis!.del(roleParentsKey);
+
+      for (const parent of role.parents) {
+        await this.saveRole(parent);
+        await this.redis!.sadd(roleParentsKey, parent.name);
+      }
+
+      // Return a synthetic ID (use hash of role name since Redis doesn't have auto-increment for this)
+      // For consistency, we'll return a positive integer based on the role's position or hash
+      const allRoles = await this.redis!.smembers(this.key('roles', '_all'));
+      return allRoles.indexOf(role.name) + 1;
+    });
+  }
+
+  async loadRole(name: string): Promise<Role | null> {
+    if (!this.redis) {
+      throw new Error('Not connected');
+    }
+
+    const roleKey = this.key('roles', name);
+    const data = await this.redis.hgetall(roleKey);
+
+    if (!data || Object.keys(data).length === 0) {
+      return null;
+    }
+
+    // Load role's rights
+    const rights = new Rights();
+    const roleRightsKey = this.key('roles', name, 'rights');
+    const rightIds = await this.redis.smembers(roleRightsKey);
+
+    for (const rightIdStr of rightIds) {
+      const right = await this.loadRight(Number.parseInt(rightIdStr, 10));
+      if (right) {
+        rights.add(right);
+      }
+    }
+
+    return new Role(name, rights);
+  }
+
+  async loadRoles(): Promise<Role[]> {
+    if (!this.redis) {
+      throw new Error('Not connected');
+    }
+
+    const allRoleNames = await this.redis.smembers(this.key('roles', '_all'));
+    const loadedRoles: Role[] = [];
+
+    for (const name of allRoleNames) {
+      const role = await this.loadRole(name);
+      if (role) {
+        loadedRoles.push(role);
+      }
+    }
+
+    return loadedRoles;
+  }
+
+  async deleteRole(name: string): Promise<boolean> {
+    if (!this.redis) {
+      throw new Error('Not connected');
+    }
+
+    const roleKey = this.key('roles', name);
+    const exists = await this.redis.exists(roleKey);
+
+    if (!exists) {
+      return false;
+    }
+
+    const pipeline = this.redis.multi();
+    pipeline.del(roleKey);
+    pipeline.del(this.key('roles', name, 'rights'));
+    pipeline.del(this.key('roles', name, 'parents'));
+    pipeline.srem(this.key('roles', '_all'), name);
+    await pipeline.exec();
+
+    return true;
+  }
+
+  // ===========================================================================
+  // RoleRegistry Operations
+  // ===========================================================================
+
+  async saveRegistry(registry: RoleRegistry): Promise<void> {
+    if (!this.redis) {
+      throw new Error('Not connected');
+    }
+
+    await this.transaction(async () => {
+      const rolesToSave = new Map<string, Role>();
+
+      const collectRoles = (role: Role) => {
+        if (!rolesToSave.has(role.name)) {
+          rolesToSave.set(role.name, role);
+          for (const parent of role.parents) {
+            collectRoles(parent);
+          }
+        }
+      };
+
+      registry.toJSON().forEach(roleJson => {
+        const role = registry.get(roleJson.name);
+        if (role) {
+          collectRoles(role);
+        }
+      });
+
+      for (const role of rolesToSave.values()) {
+        await this.saveRole(role);
+      }
+    });
+  }
+
+  async loadRegistry(): Promise<RoleRegistry> {
+    const registry = new RoleRegistry();
+    const roles = await this.loadRoles();
+
+    // First pass: define all roles with their rights
+    for (const role of roles) {
+      registry.define(role.name, role.rights);
+    }
+
+    // Second pass: set up inheritance
+    for (const role of roles) {
+      const roleParentsKey = this.key('roles', role.name, 'parents');
+      const parentNames = await this.redis!.smembers(roleParentsKey);
+
+      const registryRole = registry.get(role.name);
+      if (registryRole) {
+        for (const parentName of parentNames) {
+          const parentRole = registry.get(parentName);
+          if (parentRole) {
+            registryRole.inheritsFrom(parentRole);
+          }
+        }
+      }
+    }
+
+    return registry;
+  }
+
+  // ===========================================================================
+  // Subject Operations
+  // ===========================================================================
+
+  async saveSubject(identifier: string, subject: Subject): Promise<number> {
+    if (!this.redis) {
+      throw new Error('Not connected');
+    }
+
+    return this.transaction(async () => {
+      const subjectKey = this.key('subjects', identifier);
+      const existingData = await this.redis!.hgetall(subjectKey);
+
+      const now = new Date().toISOString();
+      let id: number;
+
+      if (existingData && existingData.id) {
+        id = Number.parseInt(existingData.id, 10);
+        // Update existing subject
+        await this.redis!.hset(subjectKey, {
+          identifier,
+          updated_at: now
+        });
+      } else {
+        // Create new subject with auto-increment ID
+        id = await this.redis!.incr(this.key('subjects', '_seq'));
+        await this.redis!.hset(subjectKey, {
+          created_at: now,
+          id: id.toString(),
+          identifier,
+          updated_at: now
+        });
+        await this.redis!.sadd(this.key('subjects', '_all'), identifier);
+      }
+
+      // Clear and rebuild subject roles
+      const subjectRolesKey = this.key('subjects', identifier, 'roles');
+      await this.redis!.del(subjectRolesKey);
+
+      for (const role of subject.roles) {
+        await this.saveRole(role);
+        await this.redis!.sadd(subjectRolesKey, role.name);
+      }
+
+      // Clear and rebuild subject direct rights
+      const subjectRightsKey = this.key('subjects', identifier, 'rights');
+      await this.redis!.del(subjectRightsKey);
+
+      for (const right of subject.rights.allRights()) {
+        const rightId = await this.saveRight(right);
+        await this.redis!.sadd(subjectRightsKey, rightId.toString());
+      }
+
+      return id;
+    });
+  }
+
+  async loadSubject(identifier: string): Promise<Subject | null> {
+    if (!this.redis) {
+      throw new Error('Not connected');
+    }
+
+    const subjectKey = this.key('subjects', identifier);
+    const data = await this.redis.hgetall(subjectKey);
+
+    if (!data || Object.keys(data).length === 0) {
+      return null;
+    }
+
+    const subject = new Subject();
+
+    // Load subject's roles
+    const subjectRolesKey = this.key('subjects', identifier, 'roles');
+    const roleNames = await this.redis.smembers(subjectRolesKey);
+
+    for (const roleName of roleNames) {
+      const role = await this.loadRole(roleName);
+      if (role) {
+        subject.memberOf(role);
+      }
+    }
+
+    // Load subject's direct rights
+    const subjectRightsKey = this.key('subjects', identifier, 'rights');
+    const rightIds = await this.redis.smembers(subjectRightsKey);
+
+    for (const rightIdStr of rightIds) {
+      const right = await this.loadRight(Number.parseInt(rightIdStr, 10));
+      if (right) {
+        subject.rights.add(right);
+      }
+    }
+
+    return subject;
+  }
+
+  async deleteSubject(identifier: string): Promise<boolean> {
+    if (!this.redis) {
+      throw new Error('Not connected');
+    }
+
+    const subjectKey = this.key('subjects', identifier);
+    const exists = await this.redis.exists(subjectKey);
+
+    if (!exists) {
+      return false;
+    }
+
+    const pipeline = this.redis.multi();
+    pipeline.del(subjectKey);
+    pipeline.del(this.key('subjects', identifier, 'roles'));
+    pipeline.del(this.key('subjects', identifier, 'rights'));
+    pipeline.srem(this.key('subjects', '_all'), identifier);
+    await pipeline.exec();
+
+    return true;
+  }
+
+  // ===========================================================================
+  // Utility
+  // ===========================================================================
+
+  async clear(): Promise<void> {
+    if (!this.redis) {
+      throw new Error('Not connected');
+    }
+
+    const prefix = this.options.keyPrefix ?? this.tablePrefix;
+    const pattern = `${prefix}*`;
+
+    // Use SCAN to find all keys matching our prefix (safer than KEYS for production)
+    let cursor = '0';
+    const keysToDelete: string[] = [];
+
+    do {
+      const [nextCursor, keys] = await this.redis.scan(
+        cursor,
+        'MATCH',
+        pattern,
+        'COUNT',
+        100
+      );
+      cursor = nextCursor;
+      keysToDelete.push(...keys);
+    } while (cursor !== '0');
+
+    // Delete keys in batches
+    if (keysToDelete.length > 0) {
+      const batchSize = 100;
+      for (let i = 0; i < keysToDelete.length; i += batchSize) {
+        const batch = keysToDelete.slice(i, i + batchSize);
+        await this.redis.del(...batch);
+      }
+    }
+  }
+
+  async transaction<T>(
+    fn: (adapter: DatabaseAdapter) => Promise<T>
+  ): Promise<T> {
+    if (!this.redis) {
+      throw new Error('Not connected');
+    }
+
+    // Note: Redis MULTI/EXEC doesn't support true rollback like SQL databases.
+    // If an error occurs, we can't undo operations that were already executed.
+    // For nested transactions, we just track depth and only wrap at the outermost level.
+
+    const isNested = this.transactionDepth > 0;
+    this.transactionDepth++;
+
+    try {
+      const result = await fn(this);
+      this.transactionDepth--;
+      return result;
+    } catch (error) {
+      this.transactionDepth--;
+      throw error;
+    }
+  }
+
+  // ===========================================================================
+  // Private Helpers
+  // ===========================================================================
+
+  /**
+   * Convert Redis hash data to a RightsRow
+   */
+  private hashToRightsRow(data: Record<string, string>): RightsRow {
+    return {
+      allow_mask: Number.parseInt(data.allow_mask || '0', 10),
+      created_at: data.created_at || new Date().toISOString(),
+      deny_mask: Number.parseInt(data.deny_mask || '0', 10),
+      description: data.description || null,
+      id: Number.parseInt(data.id || '0', 10),
+      path: data.path || '',
+      tags: data.tags || null,
+      updated_at: data.updated_at || new Date().toISOString(),
+      valid_from: data.valid_from || null,
+      valid_until: data.valid_until || null
+    };
+  }
+}

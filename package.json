@@ -1,6 +1,6 @@
 {
   "name": "odgn-rights",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Tiny TypeScript library for expressing and evaluating hierarchical rights with simple glob patterns.",
   "keywords": [
     "rights",
@@ -40,6 +40,10 @@
     "./adapters/postgres": {
       "types": "./dist/adapters/postgres-adapter.d.ts",
       "import": "./dist/adapters/postgres-adapter.js"
+    },
+    "./adapters/redis": {
+      "types": "./dist/adapters/redis-adapter.d.ts",
+      "import": "./dist/adapters/redis-adapter.js"
     }
   },
   "files": [
@@ -68,6 +72,7 @@
     "@nkzw/eslint-config": "^3.3.0",
     "@playwright/test": "^1.57.0",
     "@testcontainers/postgresql": "^11.11.0",
+    "@testcontainers/valkey": "^11.11.0",
     "@types/bun": "latest",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
@@ -85,6 +90,7 @@
   "sideEffects": false,
   "dependencies": {
     "commander": "^14.0.2",
+    "ioredis": "^5.6.1",
     "jotai": "^2.16.1",
     "react": "^19.2.3",
     "react-dom": "^19.2.3"
