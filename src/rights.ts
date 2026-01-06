@@ -119,6 +119,42 @@ export class Rights {
     return this;
   }
 
+  /**
+   * Exclude (deny) specific flags for a path pattern.
+   * This is equivalent to calling deny() for each flag but accepts multiple flags.
+   * Provides clearer semantics for exclusion patterns.
+   *
+   * @example
+   * rights.allow('/api/**', Flags.READ);
+   * rights.exclude('/api/internal/**', Flags.READ); // Deny read on internal paths
+   *
+   * @example
+   * rights.allow('/files/**', Flags.ALL);
+   * rights.exclude('/files/system/**', Flags.DELETE, Flags.WRITE); // Protect system files
+   */
+  exclude(path: string, ...flags: Flags[]): this {
+    // Strip leading ! if present (user might write exclude('!/path'))
+    const cleanPath = path.startsWith('!') ? path.slice(1) : path;
+    const p = normalizePath(cleanPath);
+    let r = this.list.find(x => x.path === p);
+    if (!r) {
+      r = new Right(p);
+      this.list.push(r);
+    } else {
+      // Invalidate cache if we update an existing right
+      this.matchCache.clear();
+    }
+    // Support spreading an array: exclude(path, [Flags.READ, Flags.WRITE] as any)
+    const flat: Flags[] = ([] as Flags[]).concat(
+      ...(flags as unknown as Flags[][])
+    );
+    for (const f of flat) {
+      r.deny(f);
+    }
+    this.notify();
+    return this;
+  }
+
   private matchOrdered(path: string): Right[] {
     const cached = this.matchCache.get(path);
     if (cached) {

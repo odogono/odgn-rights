@@ -1,5 +1,5 @@
 import { ALL_BITS, Flags, hasBit } from './constants';
-import { lettersFromMask, normalizePath } from './helpers';
+import { lettersFromMask, normalizePath, parsePath } from './helpers';
 
 export type ConditionContext = unknown;
 export type Condition = (context?: ConditionContext) => boolean;
@@ -30,7 +30,8 @@ export class Right {
   private _dbId?: number;
 
   constructor(path: string, init?: RightInit) {
-    this.path = normalizePath(path);
+    const parsed = parsePath(path);
+    this.path = parsed.path;
     this.description = init?.description;
     this.condition = init?.condition;
     this.validFrom = init?.validFrom;
@@ -46,11 +47,23 @@ export class Right {
     if (this.path.includes('*') || this.path.includes('?')) {
       this._re = Right.globToRegExp(this.path);
     }
-    if (init?.allow) {
-      init.allow.forEach(f => this.allow(f));
-    }
-    if (init?.deny) {
-      init.deny.forEach(f => this.deny(f));
+
+    // When path is negated (!path), swap allow and deny semantics
+    // allow becomes deny, deny becomes allow
+    if (parsed.negated) {
+      if (init?.allow) {
+        init.allow.forEach(f => this.deny(f));
+      }
+      if (init?.deny) {
+        init.deny.forEach(f => this.allow(f));
+      }
+    } else {
+      if (init?.allow) {
+        init.allow.forEach(f => this.allow(f));
+      }
+      if (init?.deny) {
+        init.deny.forEach(f => this.deny(f));
+      }
     }
   }
 
@@ -362,13 +375,16 @@ export class Right {
       }
     }
 
-    const r = new Right(pathStr, init);
+    // Check if path is negated (starts with !)
+    const parsed = parsePath(pathStr);
+    const r = new Right(parsed.path, init);
 
     if (!flagsStr) {
       return r;
     }
 
     // parse groups like '-abc+xyz' or '+xyz-abc'
+    // When path is negated, swap the meaning of + and -
     let i = 0;
     while (i < flagsStr.length) {
       const sign = flagsStr[i];
@@ -386,8 +402,17 @@ export class Right {
         letters += flagsStr[i];
         i++;
       }
-      const apply =
-        sign === '+' ? (f: Flags) => r.allow(f) : (f: Flags) => r.deny(f);
+
+      // When negated: + becomes deny, - becomes allow
+      let apply: (f: Flags) => void;
+      if (parsed.negated) {
+        apply =
+          sign === '+' ? (f: Flags) => r.deny(f) : (f: Flags) => r.allow(f);
+      } else {
+        apply =
+          sign === '+' ? (f: Flags) => r.allow(f) : (f: Flags) => r.deny(f);
+      }
+
       if (letters === '*') {
         apply(Flags.ALL);
         continue;
