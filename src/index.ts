@@ -4,5 +4,6 @@ export * from './rights';
 export * from './role';
 export * from './role-registry';
 export * from './subject';
+export * from './subject-registry';
 export * from './helpers';
 export * from './adapters';

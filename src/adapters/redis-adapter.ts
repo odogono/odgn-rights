@@ -1,5 +1,6 @@
 import Redis from 'ioredis';
 
+import { Flags } from '../constants';
 import { Right } from '../right';
 import { Rights } from '../rights';
 import { Role } from '../role';
@@ -570,6 +571,29 @@ export class RedisAdapter extends BaseAdapter {
     await pipeline.exec();
 
     return true;
+  }
+
+  async findSubjectsWithAccess(
+    pathPattern: string,
+    flags: Flags
+  ): Promise<string[]> {
+    if (!this.redis) {
+      throw new Error('Not connected');
+    }
+
+    const matchingSubjects: string[] = [];
+    const allSubjectsKey = this.key('subjects', '_all');
+
+    const subjectIdentifiers = await this.redis.smembers(allSubjectsKey);
+
+    for (const identifier of subjectIdentifiers) {
+      const subject = await this.loadSubject(identifier);
+      if (subject && subject.has(pathPattern, flags)) {
+        matchingSubjects.push(identifier);
+      }
+    }
+
+    return matchingSubjects;
   }
 
   // ===========================================================================

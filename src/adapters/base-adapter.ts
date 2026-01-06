@@ -168,6 +168,10 @@ export abstract class BaseAdapter implements DatabaseAdapter {
   abstract saveSubject(identifier: string, subject: Subject): Promise<number>;
   abstract loadSubject(identifier: string): Promise<Subject | null>;
   abstract deleteSubject(identifier: string): Promise<boolean>;
+  abstract findSubjectsWithAccess(
+    pathPattern: string,
+    flags: Flags
+  ): Promise<string[]>;
 
   abstract clear(): Promise<void>;
   abstract transaction<T>(

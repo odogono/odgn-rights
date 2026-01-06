@@ -1,5 +1,6 @@
 import { SQL } from 'bun';
 
+import { Flags } from '../constants';
 import { Right } from '../right';
 import { Rights } from '../rights';
 import { Role } from '../role';
@@ -528,6 +529,32 @@ export class PostgresAdapter extends BaseAdapter {
     );
 
     return (result as unknown as { count: number }).count > 0;
+  }
+
+  async findSubjectsWithAccess(
+    pathPattern: string,
+    flags: Flags
+  ): Promise<string[]> {
+    if (!this.sql) {
+      throw new Error('Not connected');
+    }
+
+    const { subjects } = this.tables;
+    const matchingSubjects: string[] = [];
+
+    const allSubjects = await this.sql.unsafe(
+      `SELECT identifier FROM ${subjects}`
+    );
+
+    for (const row of allSubjects) {
+      const subjectRow = row as { identifier: string };
+      const subject = await this.loadSubject(subjectRow.identifier);
+      if (subject && subject.has(pathPattern, flags)) {
+        matchingSubjects.push(subjectRow.identifier);
+      }
+    }
+
+    return matchingSubjects;
   }
 
   // ===========================================================================

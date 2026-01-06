@@ -1,5 +1,6 @@
 import { Database, type Statement } from 'bun:sqlite';
 
+import { Flags } from '../constants';
 import { Right } from '../right';
 import { Rights } from '../rights';
 import { Role } from '../role';
@@ -529,6 +530,30 @@ export class SQLiteAdapter extends BaseAdapter {
 
     const result = this.stmtDeleteSubject.run({ $identifier: identifier });
     return result.changes > 0;
+  }
+
+  async findSubjectsWithAccess(
+    pathPattern: string,
+    flags: Flags
+  ): Promise<string[]> {
+    if (!this.db) {
+      throw new Error('Not connected');
+    }
+
+    const matchingSubjects: string[] = [];
+
+    const allSubjects = this.db
+      .prepare(`SELECT identifier FROM ${this.tables.subjects}`)
+      .all() as Array<{ identifier: string }>;
+
+    for (const subjectRow of allSubjects) {
+      const subject = await this.loadSubject(subjectRow.identifier);
+      if (subject && subject.has(pathPattern, flags)) {
+        matchingSubjects.push(subjectRow.identifier);
+      }
+    }
+
+    return matchingSubjects;
   }
 
   // ===========================================================================

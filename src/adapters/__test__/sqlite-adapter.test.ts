@@ -226,6 +226,109 @@ describe('SQLiteAdapter', () => {
       const loaded = await adapter.loadSubject('temp-user');
       expect(loaded).toBeNull();
     });
+
+    test('findSubjectsWithAccess returns subjects with matching rights', async () => {
+      const { RoleRegistry, Subject, Right } = await import('../../index');
+
+      const registry = new RoleRegistry();
+      const admin = registry.define('admin');
+      admin.rights.allow('/admin/**', Flags.ALL);
+      const editor = registry.define('editor');
+      editor.rights.allow('/posts/**', Flags.WRITE);
+
+      const adminUser = new Subject();
+      adminUser.memberOf(admin);
+      await adapter.saveSubject('admin-user', adminUser);
+
+      const editorUser = new Subject();
+      editorUser.memberOf(editor);
+      await adapter.saveSubject('editor-user', editorUser);
+
+      const directUser = new Subject();
+      directUser.rights.add(
+        new Right('/admin/dashboard', { allow: [Flags.READ] })
+      );
+      await adapter.saveSubject('direct-user', directUser);
+
+      const noRightsUser = new Subject();
+      await adapter.saveSubject('no-rights-user', noRightsUser);
+
+      const adminAccess = await adapter.findSubjectsWithAccess(
+        '/admin/**',
+        Flags.ALL
+      );
+      expect(adminAccess).toContain('admin-user');
+      expect(adminAccess).not.toContain('editor-user');
+      expect(adminAccess).not.toContain('direct-user');
+      expect(adminAccess).not.toContain('no-rights-user');
+
+      const writeAccess = await adapter.findSubjectsWithAccess(
+        '/posts/**',
+        Flags.WRITE
+      );
+      expect(writeAccess).toContain('editor-user');
+      expect(writeAccess).not.toContain('admin-user');
+      expect(writeAccess).not.toContain('direct-user');
+      expect(writeAccess).not.toContain('no-rights-user');
+
+      const dashboardRead = await adapter.findSubjectsWithAccess(
+        '/admin/dashboard',
+        Flags.READ
+      );
+      expect(dashboardRead).toContain('admin-user');
+      expect(dashboardRead).toContain('direct-user');
+      expect(dashboardRead).not.toContain('editor-user');
+      expect(dashboardRead).not.toContain('no-rights-user');
+    });
+
+    test('findSubjectsWithAccess returns empty array when no subjects match', async () => {
+      const { Subject } = await import('../../index');
+      const subject = new Subject();
+      await adapter.saveSubject('user', subject);
+
+      const results = await adapter.findSubjectsWithAccess(
+        '/admin/**',
+        Flags.ALL
+      );
+      expect(results).toEqual([]);
+    });
+
+    test('findSubjectsWithAccess handles wildcard patterns correctly', async () => {
+      const { RoleRegistry, Subject } = await import('../../index');
+
+      const registry = new RoleRegistry();
+      const apiUser = registry.define('api-user');
+      apiUser.rights.allow('/api/**', Flags.READ);
+
+      const user1 = new Subject();
+      user1.memberOf(apiUser);
+      await adapter.saveSubject('api-user-1', user1);
+
+      const user2 = new Subject();
+      user2.rights.allow('/api/v1/users', Flags.READ);
+      await adapter.saveSubject('api-user-2', user2);
+
+      const v1UsersAccess = await adapter.findSubjectsWithAccess(
+        '/api/v1/users',
+        Flags.READ
+      );
+      expect(v1UsersAccess).toContain('api-user-1');
+      expect(v1UsersAccess).toContain('api-user-2');
+
+      const v1WildcardAccess = await adapter.findSubjectsWithAccess(
+        '/api/v1/**',
+        Flags.READ
+      );
+      expect(v1WildcardAccess).toContain('api-user-1');
+      expect(v1WildcardAccess).not.toContain('api-user-2');
+
+      const allApiAccess = await adapter.findSubjectsWithAccess(
+        '/api/**',
+        Flags.READ
+      );
+      expect(allApiAccess).toContain('api-user-1');
+      expect(allApiAccess).not.toContain('api-user-2');
+    });
   });
 
   describe('Transaction support', () => {

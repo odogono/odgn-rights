@@ -1,3 +1,4 @@
+import { Flags } from '../constants';
 import type { Right } from '../right';
 import type { Rights } from '../rights';
 import type { Role } from '../role';
@@ -222,6 +223,16 @@ export type DatabaseAdapter = {
    */
   saveSubject(identifier: string, subject: Subject): Promise<number>;
 
+  /**
+   * Find all subject identifiers that have access to a specific path with given flags
+   * @param pathPattern The path pattern to check (supports wildcards)
+   * @param flags The flags to check for
+   * @returns Array of subject identifiers that have access
+   */
+  findSubjectsWithAccess(pathPattern: string, flags: Flags): Promise<string[]>;
+
+  // -------------------------------------------------------------------------
+  // Transaction Support
   // -------------------------------------------------------------------------
   // Transaction Support
   // -------------------------------------------------------------------------
