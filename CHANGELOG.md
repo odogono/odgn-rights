@@ -1,6 +1,30 @@
-## 0.5.0 - 2026-01-06
+## 0.5.0 - 2026-01-07
 
 ### Added
+
+- **Elysia Integration**: New middleware for ElysiaJS web framework authorization.
+  - `elysiaRights()`: Main plugin with Subject/SubjectRegistry support.
+  - `elysiaRightsStandalone()`: Simplified plugin using a `Rights` instance directly.
+  - `createRightsGuard()`: Guard configuration for selective route protection via `.guard()`.
+  - `createRightsMacro()`: Macro for declarative per-route authorization.
+  - Automatic HTTP method to permission flag mapping (GET→READ, POST→CREATE, etc.).
+  - ABAC support via `getContext` option for attribute-based checks.
+  - New export: `./integrations/elysia`.
+
+- **Subject Registry**: New `SubjectRegistry` class for managing and querying named subjects.
+  - `register(id, subject)`: Register subjects with unique identifiers.
+  - `findSubjectsWithAccess(path, flags, context?)`: Reverse-query to find all subjects with access to a resource.
+  - Full database adapter support with optimized batch queries (SQLite, PostgreSQL, Redis).
+
+- **Negation Patterns**: Paths prefixed with `!` swap allow/deny semantics for easy exclusion rules.
+  - `Right.parse('+r:!/api/internal/**')` creates a deny rule for READ.
+  - `Rights.exclude(path, ...flags)` helper method for common exclusion patterns.
+  - Double negation supported (`!!` cancels out).
+
+- **Batch Checking**: Check multiple permissions in a single call.
+  - `Rights.checkMany(requests, context?)`: Returns array of booleans for each request.
+  - `Subject.checkMany(requests, context?)`: Same API on Subject instances.
+  - Useful for bulk authorization, feature flags, and UI rendering.
 
 - **Explicit Rule Priority**: Rules can now have a `priority` value that overrides specificity-based resolution.
   - Higher priority wins regardless of path specificity.
@@ -10,6 +34,11 @@
   - JSON serialization: optional `priority` field (omitted when 0).
   - Full support in all database adapters (SQLite, PostgreSQL, Redis).
   - CLI `explain` command now displays priority alongside specificity.
+
+### Changed
+
+- Elysia added as optional peer dependency (`^1.0.0`).
+- Updated `ioredis` dependency from `^5.6.1` to `^5.9.0`.
 
 ## 0.4.0 - 2026-01-06
 
