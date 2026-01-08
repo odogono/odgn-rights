@@ -577,3 +577,99 @@ describe('Batch permission checks', () => {
     expect(results).toEqual([true, true, true]);
   });
 });
+
+describe('Rights.remove', () => {
+  it('removes an existing right and returns true', () => {
+    const rights = new Rights();
+    const right = new Right('/users', { allow: [Flags.READ] });
+    rights.add(right);
+
+    expect(rights.allRights()).toHaveLength(1);
+
+    const result = rights.remove(right);
+
+    expect(result).toBe(true);
+    expect(rights.allRights()).toHaveLength(0);
+  });
+
+  it('returns false when removing a non-existent right', () => {
+    const rights = new Rights();
+    const right1 = new Right('/users', { allow: [Flags.READ] });
+    const right2 = new Right('/posts', { allow: [Flags.WRITE] });
+    rights.add(right1);
+
+    const result = rights.remove(right2);
+
+    expect(result).toBe(false);
+    expect(rights.allRights()).toHaveLength(1);
+  });
+
+  it('clears match cache after removal', () => {
+    const rights = new Rights();
+    const generalRight = new Right('/', { allow: [Flags.READ] });
+    const specificRight = new Right('/users', {
+      deny: [Flags.READ],
+      priority: 100
+    });
+    rights.add(generalRight);
+    rights.add(specificRight);
+
+    // Before removal: specific deny should block read
+    expect(rights.read('/users')).toBe(false);
+
+    // Remove the deny rule
+    rights.remove(specificRight);
+
+    // After removal: general allow should permit read
+    expect(rights.read('/users')).toBe(true);
+  });
+
+  it('triggers onChange notification', () => {
+    const rights = new Rights();
+    const right = new Right('/users', { allow: [Flags.READ] });
+    rights.add(right);
+
+    let notified = false;
+    rights.onChange = () => {
+      notified = true;
+    };
+
+    rights.remove(right);
+
+    expect(notified).toBe(true);
+  });
+
+  it('does not trigger onChange when removing non-existent right', () => {
+    const rights = new Rights();
+    const right1 = new Right('/users', { allow: [Flags.READ] });
+    const right2 = new Right('/posts', { allow: [Flags.WRITE] });
+    rights.add(right1);
+
+    let notified = false;
+    rights.onChange = () => {
+      notified = true;
+    };
+
+    rights.remove(right2);
+
+    expect(notified).toBe(false);
+  });
+
+  it('removes the correct right when multiple rights exist', () => {
+    const rights = new Rights();
+    const right1 = new Right('/users', { allow: [Flags.READ] });
+    const right2 = new Right('/posts', { allow: [Flags.WRITE] });
+    const right3 = new Right('/admin', { allow: [Flags.ALL] });
+    rights.add(right1);
+    rights.add(right2);
+    rights.add(right3);
+
+    rights.remove(right2);
+
+    const remaining = rights.allRights();
+    expect(remaining).toHaveLength(2);
+    expect(remaining).toContain(right1);
+    expect(remaining).not.toContain(right2);
+    expect(remaining).toContain(right3);
+  });
+});

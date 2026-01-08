@@ -1,3 +1,14 @@
+## 0.5.1 - 2026-01-08
+
+### Fixed
+
+- **Registry Loading**: Fixed role inheritance not being properly restored when loading a `RoleRegistry` from database adapters. The registered role instance is now correctly used when rebuilding parent-child relationships.
+
+### Added
+
+- `Rights.remove(right)`: Method to remove a specific right from a collection.
+- `Role.clearParents()`: Method to clear all parent role relationships, useful when rebuilding inheritance hierarchies.
+
 ## 0.5.0 - 2026-01-07
 
 ### Added

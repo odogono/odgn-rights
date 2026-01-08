@@ -91,7 +91,9 @@ export abstract class BaseAdapter implements DatabaseAdapter {
       validUntil: row.valid_until ? new Date(row.valid_until) : undefined
     };
 
-    return new Right(row.path, init);
+    const right = new Right(row.path, init);
+    right._setDbId(row.id);
+    return right;
   };
 
   /**

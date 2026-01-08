@@ -363,7 +363,8 @@ export class PostgresAdapter extends BaseAdapter {
     const roleMap = new Map<string, { id: number; role: Role }>();
 
     for (const role of roles) {
-      registry.define(role.name, role.rights);
+      // Define the role in the registry and get the registered role back
+      const registeredRole = registry.define(role.name, role.rights);
 
       const { roles: rolesTable } = this.tables;
 
@@ -373,7 +374,8 @@ export class PostgresAdapter extends BaseAdapter {
       );
 
       if (roleRow) {
-        roleMap.set(role.name, { id: roleRow.id, role });
+        // Store the registered role, not the original loaded role
+        roleMap.set(role.name, { id: roleRow.id, role: registeredRole });
       }
     }
 

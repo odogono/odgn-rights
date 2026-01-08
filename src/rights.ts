@@ -33,6 +33,22 @@ export class Rights {
     return this;
   }
 
+  /**
+   * Remove a specific right from the collection.
+   * @param right The right to remove
+   * @returns true if the right was found and removed, false otherwise
+   */
+  remove(right: Right): boolean {
+    const idx = this.list.indexOf(right);
+    if (idx !== -1) {
+      this.list.splice(idx, 1);
+      this.matchCache.clear();
+      this.notify();
+      return true;
+    }
+    return false;
+  }
+
   findByTag(tag: string): Right[] {
     return this.list.filter(r => r.hasTag(tag));
   }

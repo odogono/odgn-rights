@@ -341,3 +341,133 @@ describe('Subject batch permission checks', () => {
     expect(results).toEqual([true, true, true]);
   });
 });
+
+describe('Role.clearParents', () => {
+  it('removes all parent relationships', () => {
+    const parent1 = new Role('parent1', new Rights().allow('/', Flags.READ));
+    const parent2 = new Role(
+      'parent2',
+      new Rights().allow('/admin', Flags.ALL)
+    );
+    const child = new Role('child');
+
+    child.inheritsFrom(parent1);
+    child.inheritsFrom(parent2);
+
+    expect(child.parents).toHaveLength(2);
+
+    child.clearParents();
+
+    expect(child.parents).toHaveLength(0);
+  });
+
+  it('removes child from parent children lists', () => {
+    const parent = new Role('parent');
+    const child1 = new Role('child1');
+    const child2 = new Role('child2');
+
+    child1.inheritsFrom(parent);
+    child2.inheritsFrom(parent);
+
+    // Access private children via inheritance test
+    expect(child1.parents).toContain(parent);
+    expect(child2.parents).toContain(parent);
+
+    child1.clearParents();
+
+    // child2 should still be a child of parent
+    // Verify by checking that parent changes still propagate to child2
+    parent.rights.allow('/new', Flags.READ);
+    expect(child2.allRights().some(r => r.right.path === '/new')).toBe(true);
+
+    // But child1 should NOT get the new right
+    expect(child1.allRights().some(r => r.right.path === '/new')).toBe(false);
+  });
+
+  it('invalidates cache so inherited rights are no longer accessible', () => {
+    const parent = new Role(
+      'parent',
+      new Rights().allow('/shared', Flags.READ)
+    );
+    const child = new Role('child');
+
+    child.inheritsFrom(parent);
+
+    // Before clearParents: child has inherited rights
+    expect(child.allRights()).toHaveLength(1);
+    expect(child.allRights()[0]!.right.path).toBe('/shared');
+
+    child.clearParents();
+
+    // After clearParents: child has no rights
+    expect(child.allRights()).toHaveLength(0);
+  });
+
+  it('works correctly when role has no parents', () => {
+    const role = new Role('standalone', new Rights().allow('/', Flags.READ));
+
+    expect(role.parents).toHaveLength(0);
+
+    // Should not throw
+    role.clearParents();
+
+    expect(role.parents).toHaveLength(0);
+    expect(role.allRights()).toHaveLength(1);
+  });
+
+  it('is chainable', () => {
+    const parent = new Role('parent');
+    const child = new Role('child');
+    child.inheritsFrom(parent);
+
+    const result = child.clearParents();
+
+    expect(result).toBe(child);
+  });
+
+  it('allows setting new parents after clearing', () => {
+    const oldParent = new Role(
+      'oldParent',
+      new Rights().allow('/old', Flags.READ)
+    );
+    const newParent = new Role(
+      'newParent',
+      new Rights().allow('/new', Flags.WRITE)
+    );
+    const child = new Role('child');
+
+    child.inheritsFrom(oldParent);
+    expect(child.allRights().some(r => r.right.path === '/old')).toBe(true);
+
+    child.clearParents();
+    child.inheritsFrom(newParent);
+
+    expect(child.allRights()).toHaveLength(1);
+    expect(child.allRights()[0]!.right.path).toBe('/new');
+    expect(child.allRights().some(r => r.right.path === '/old')).toBe(false);
+  });
+
+  it('handles multi-level inheritance correctly', () => {
+    const grandparent = new Role(
+      'grandparent',
+      new Rights().allow('/gp', Flags.READ)
+    );
+    const parent = new Role('parent', new Rights().allow('/p', Flags.READ));
+    const child = new Role('child');
+
+    parent.inheritsFrom(grandparent);
+    child.inheritsFrom(parent);
+
+    // Child should have both grandparent and parent rights
+    expect(child.allRights()).toHaveLength(2);
+
+    // Clear only the child's direct parents
+    child.clearParents();
+
+    // Child should have no rights now
+    expect(child.allRights()).toHaveLength(0);
+
+    // Parent should still inherit from grandparent
+    expect(parent.allRights()).toHaveLength(2);
+  });
+});

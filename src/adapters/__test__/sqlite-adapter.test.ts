@@ -366,4 +366,161 @@ describe('SQLiteAdapter', () => {
       expect(rights.allRights()).toHaveLength(0);
     });
   });
+
+  describe('Right dbId assignment', () => {
+    test('loadRight returns right with dbId set', async () => {
+      const right = new Right('/users/*', { allow: [Flags.READ] });
+      expect(right.dbId).toBeUndefined();
+
+      const id = await adapter.saveRight(right);
+      const loaded = await adapter.loadRight(id);
+
+      expect(loaded).not.toBeNull();
+      expect(loaded!.dbId).toBe(id);
+    });
+
+    test('loadRights returns all rights with dbIds set', async () => {
+      const rights = new Rights();
+      rights.allow('/a', Flags.READ);
+      rights.allow('/b', Flags.WRITE);
+      rights.allow('/c', Flags.DELETE);
+
+      const ids = await adapter.saveRights(rights);
+
+      const loaded = await adapter.loadRights();
+      const loadedRights = loaded.allRights();
+
+      expect(loadedRights).toHaveLength(3);
+      for (const right of loadedRights) {
+        expect(right.dbId).toBeDefined();
+        expect(ids).toContain(right.dbId!);
+      }
+    });
+
+    test('loadRightsByPath returns rights with dbIds set', async () => {
+      await adapter.saveRight(new Right('/users/123', { allow: [Flags.READ] }));
+      await adapter.saveRight(
+        new Right('/users/456', { allow: [Flags.WRITE] })
+      );
+
+      const rights = await adapter.loadRightsByPath('/users/*');
+      const loadedRights = rights.allRights();
+
+      expect(loadedRights).toHaveLength(2);
+      for (const right of loadedRights) {
+        expect(right.dbId).toBeDefined();
+        expect(right.dbId).toBeGreaterThan(0);
+      }
+    });
+  });
+
+  describe('loadRegistry inheritance fix', () => {
+    test('loaded registry has working inheritance', async () => {
+      const { RoleRegistry, Subject } = await import('../../index');
+
+      // Create and save a registry with inheritance
+      const registry = new RoleRegistry();
+      const viewer = registry.define('viewer');
+      viewer.rights.allow('/read/*', Flags.READ);
+
+      const editor = registry.define('editor');
+      editor.rights.allow('/write/*', Flags.WRITE);
+      editor.inheritsFrom(viewer);
+
+      await adapter.saveRegistry(registry);
+
+      // Load the registry fresh
+      const loaded = await adapter.loadRegistry();
+
+      // Get the editor role from loaded registry
+      const loadedEditor = loaded.get('editor');
+      expect(loadedEditor).not.toBeUndefined();
+
+      // Verify inheritance works - editor should have both own rights and inherited viewer rights
+      const allRights = loadedEditor!.allRights();
+      expect(allRights.length).toBe(2);
+
+      const paths = allRights.map(r => r.right.path).sort();
+      expect(paths).toContain('/read/*');
+      expect(paths).toContain('/write/*');
+
+      // Verify a Subject using the loaded role works correctly
+      const subject = new Subject();
+      subject.memberOf(loadedEditor!);
+
+      expect(subject.read('/read/something')).toBe(true);
+      expect(subject.write('/write/something')).toBe(true);
+    });
+
+    test('loaded registry handles multi-level inheritance', async () => {
+      const { RoleRegistry, Subject } = await import('../../index');
+
+      // Create a 3-level hierarchy
+      const registry = new RoleRegistry();
+      const base = registry.define('base');
+      base.rights.allow('/base/*', Flags.READ);
+
+      const middle = registry.define('middle');
+      middle.rights.allow('/middle/*', Flags.WRITE);
+      middle.inheritsFrom(base);
+
+      const top = registry.define('top');
+      top.rights.allow('/top/*', Flags.ALL);
+      top.inheritsFrom(middle);
+
+      await adapter.saveRegistry(registry);
+
+      // Load and verify
+      const loaded = await adapter.loadRegistry();
+      const loadedTop = loaded.get('top');
+
+      expect(loadedTop).not.toBeUndefined();
+
+      const allRights = loadedTop!.allRights();
+      expect(allRights.length).toBe(3);
+
+      const subject = new Subject();
+      subject.memberOf(loadedTop!);
+
+      // Should have access from all levels
+      expect(subject.read('/base/file')).toBe(true);
+      expect(subject.write('/middle/file')).toBe(true);
+      expect(subject.all('/top/file')).toBe(true);
+    });
+
+    test('loaded registry inheritance is in registry not just loaded role', async () => {
+      const { RoleRegistry, Subject } = await import('../../index');
+
+      const registry = new RoleRegistry();
+      const parent = registry.define('parent');
+      parent.rights.allow('/parent/*', Flags.READ);
+
+      const child = registry.define('child');
+      child.rights.allow('/child/*', Flags.WRITE);
+      child.inheritsFrom(parent);
+
+      await adapter.saveRegistry(registry);
+
+      // Load registry
+      const loaded = await adapter.loadRegistry();
+
+      // Get roles from registry (not from loadRoles directly)
+      const loadedParent = loaded.get('parent');
+      const loadedChild = loaded.get('child');
+
+      expect(loadedParent).not.toBeUndefined();
+      expect(loadedChild).not.toBeUndefined();
+
+      // Verify parent-child relationship is on the registered roles
+      expect(loadedChild!.parents).toContain(loadedParent!);
+
+      // Verify changes to parent propagate to child (cache invalidation works)
+      loadedParent!.rights.allow('/new-parent-path/*', Flags.EXECUTE);
+
+      const subject = new Subject();
+      subject.memberOf(loadedChild!);
+
+      expect(subject.execute('/new-parent-path/script')).toBe(true);
+    });
+  });
 });

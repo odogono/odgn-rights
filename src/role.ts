@@ -31,6 +31,24 @@ export class Role {
   }
 
   /**
+   * Clear all parent role relationships.
+   * Useful when setting a new inheritance list.
+   */
+  clearParents(): this {
+    // Remove this role from each parent's children list
+    for (const parent of this.parents) {
+      const idx = parent.children.indexOf(this);
+      if (idx !== -1) {
+        parent.children.splice(idx, 1);
+      }
+    }
+    // Clear parents array
+    this.parents.length = 0;
+    this.invalidateCache();
+    return this;
+  }
+
+  /**
    * Returns all rights associated with this role, including inherited ones.
    */
   allRights(): Array<{
