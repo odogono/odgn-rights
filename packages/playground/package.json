@@ -1,0 +1,16 @@
+{
+  "name": "playground",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "dependencies": {
+    "jotai": "^2.16.1",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3",
+    "odgn-rights": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3"
+  }
+}

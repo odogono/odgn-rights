@@ -1,3 +1,12 @@
+## 0.6.0 - 2026-01-08
+
+### Changed
+
+- **Monorepo Restructure**: Converted to Bun workspaces monorepo to separate the core library from the playground.
+  - `packages/odgn-rights/` - Core library (published to npm)
+  - `packages/playground/` - Interactive browser-based testing environment (private, not published)
+- **Reduced Dependencies**: Removed `react`, `react-dom`, and `jotai` from the core package dependencies. These are now only installed when developing the playground locally. Users installing `odgn-rights` from npm no longer get unnecessary React dependencies.
+
 ## 0.5.1 - 2026-01-08
 
 ### Fixed

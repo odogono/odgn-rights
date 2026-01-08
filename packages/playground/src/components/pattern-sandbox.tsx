@@ -1,6 +1,5 @@
+import { Right } from 'odgn-rights';
 import { useMemo, useState } from 'react';
-
-import { Right } from '@/index';
 
 export const PatternSandbox = () => {
   const [pattern, setPattern] = useState('/org/open/device/**/description');

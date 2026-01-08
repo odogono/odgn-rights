@@ -1,4 +1,4 @@
-import type { RoleJSON, SubjectJSON } from '@/index';
+import type { RoleJSON, SubjectJSON } from 'odgn-rights';
 
 export type Preset = {
   config: {

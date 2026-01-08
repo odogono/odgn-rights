@@ -1,8 +1,7 @@
 /* eslint-disable @nkzw/no-instanceof */
 import { useSetAtom } from 'jotai';
+import { Flags } from 'odgn-rights';
 import { useEffect } from 'react';
-
-import { Flags } from '@/index';
 
 import { testFlagsAtom } from '../store/atoms';
 import { redoAtom, undoAtom } from '../store/history';

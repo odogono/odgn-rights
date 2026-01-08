@@ -1,0 +1,84 @@
+{
+  "name": "odgn-rights",
+  "version": "0.6.0",
+  "description": "TypeScript library for expressing and evaluating hierarchical rights with simple glob patterns.",
+  "keywords": [
+    "rights",
+    "permissions",
+    "typescript"
+  ],
+  "author": "Alex Veenendaal",
+  "repository": {
+    "type": "git",
+    "url": "https://tangled.sh:alex.veenenda.al/odgn-rights"
+  },
+  "license": "MIT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "odgn-rights": "./dist/cli/index.js",
+    "rights": "./dist/cli/index.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./cli": {
+      "types": "./dist/cli/index.d.ts",
+      "import": "./dist/cli/index.js"
+    },
+    "./adapters": {
+      "types": "./dist/adapters/index.d.ts",
+      "import": "./dist/adapters/index.js"
+    },
+    "./adapters/sqlite": {
+      "types": "./dist/adapters/sqlite-adapter.d.ts",
+      "import": "./dist/adapters/sqlite-adapter.js"
+    },
+    "./adapters/postgres": {
+      "types": "./dist/adapters/postgres-adapter.d.ts",
+      "import": "./dist/adapters/postgres-adapter.js"
+    },
+    "./adapters/redis": {
+      "types": "./dist/adapters/redis-adapter.d.ts",
+      "import": "./dist/adapters/redis-adapter.js"
+    },
+    "./integrations/elysia": {
+      "types": "./dist/integrations/elysia.d.ts",
+      "import": "./dist/integrations/elysia.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "scripts": {
+    "clean": "rm -rf dist",
+    "build": "tsc -p tsconfig.build.json",
+    "prepublishOnly": "bun run clean && bun run build"
+  },
+  "dependencies": {
+    "commander": "^14.0.2",
+    "ioredis": "^5.9.0"
+  },
+  "devDependencies": {
+    "@testcontainers/postgresql": "^11.11.0",
+    "@testcontainers/valkey": "^11.11.0",
+    "elysia": "^1.4.21",
+    "testcontainers": "^11.11.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5",
+    "elysia": "^1.0.0"
+  },
+  "peerDependenciesMeta": {
+    "elysia": {
+      "optional": true
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "sideEffects": false
+}

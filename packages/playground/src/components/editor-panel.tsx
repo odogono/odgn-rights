@@ -1,8 +1,7 @@
 /* eslint-disable no-console */
 import { useAtom, useAtomValue } from 'jotai';
+import { Rights } from 'odgn-rights';
 import { useEffect, useRef } from 'react';
-
-import { Rights } from '@/index';
 
 import {
   editorContentAtom,

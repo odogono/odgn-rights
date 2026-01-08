@@ -1,6 +1,6 @@
 /* eslint-disable no-console */
 const result = await Bun.build({
-  entrypoints: ['./playground/src/main.tsx'],
+  entrypoints: ['./src/main.tsx'],
   external: [],
   minify: true,
   sourcemap: 'none',
@@ -16,8 +16,8 @@ const js = await result.outputs[0]?.text();
 if (js === undefined) {
   throw new Error('No output from build');
 }
-const css = await Bun.file('./playground/src/styles.css').text();
-const htmlTemplate = await Bun.file('./playground/index.html').text();
+const css = await Bun.file('./src/styles.css').text();
+const htmlTemplate = await Bun.file('./index.html').text();
 
 // Inline JS and CSS into a single HTML file
 const html = htmlTemplate
@@ -30,5 +30,6 @@ const html = htmlTemplate
     `<script type="module">${js}</script>`
   );
 
-await Bun.write('./dist/playground.html', html);
+// Output to root dist folder
+await Bun.write('../../dist/playground.html', html);
 console.log('Built: dist/playground.html');

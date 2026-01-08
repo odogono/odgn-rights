@@ -1,5 +1,5 @@
 // playground/src/engine/test-runner.ts
-import { Flags, type Subject } from '@/index';
+import { Flags, type Subject } from 'odgn-rights';
 
 import type { TestCase, TestResult, TestRunSummary } from '../types/test-suite';
 

@@ -1,4 +1,4 @@
-import { Right, Role, RoleRegistry, Subject } from '@/index';
+import { Right, Role, RoleRegistry, Subject } from 'odgn-rights';
 
 export type TreeNode = {
   children: TreeNode[];

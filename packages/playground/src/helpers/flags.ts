@@ -1,5 +1,5 @@
 // playground/src/helpers/flags.ts
-import { Flags } from '@/index';
+import { Flags } from 'odgn-rights';
 
 export const getFlagName = (bit: number): string => {
   switch (bit) {

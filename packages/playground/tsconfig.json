@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "odgn-rights": ["../odgn-rights/src/index.ts"],
+      "@playground/*": ["./src/*"]
+    }
+  },
+  "include": ["src/**/*", "e2e/**/*", "build.ts"]
+}

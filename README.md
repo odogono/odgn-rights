@@ -1,6 +1,6 @@
 # ODGN Rights
 
-Tiny TypeScript library for expressing and evaluating hierarchical rights with simple glob patterns.
+TypeScript library for expressing and evaluating hierarchical rights with simple glob patterns.
 
 ## Install & Dev
 

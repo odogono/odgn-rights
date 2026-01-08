@@ -1,4 +1,4 @@
-import type { TestRunSummary } from '@/playground/types/test-suite';
+import type { TestRunSummary } from '@playground/types/test-suite';
 
 export const TestResultsSummary = ({
   filter,

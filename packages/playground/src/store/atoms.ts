@@ -1,6 +1,5 @@
 import { atom } from 'jotai';
 import { atomWithStorage } from 'jotai/utils';
-
 import {
   Flags,
   Rights,
@@ -9,7 +8,7 @@ import {
   type Right,
   type RoleJSON,
   type SubjectJSON
-} from '@/index';
+} from 'odgn-rights';
 
 // ============================================
 // Primitive Atoms (source of truth)

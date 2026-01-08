@@ -1,9 +1,9 @@
 import { useSetAtom } from 'jotai';
 import { useState } from 'react';
 
-import { getFlagName, getFlagSummary } from '@/playground/helpers/flags';
-import { testFlagsAtom, testPathAtom } from '@/playground/store/atoms';
-import type { TestCase, TestResult } from '@/playground/types/test-suite';
+import { getFlagName, getFlagSummary } from '@playground/helpers/flags';
+import { testFlagsAtom, testPathAtom } from '@playground/store/atoms';
+import type { TestCase, TestResult } from '@playground/types/test-suite';
 
 export const TestResultRow = ({
   onDelete,

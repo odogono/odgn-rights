@@ -2,23 +2,23 @@
 import { useAtom, useAtomValue, useSetAtom } from 'jotai';
 import { useRef, useState } from 'react';
 
-import { TestCaseEditor } from '@/playground/components/test-case-editor';
-import { TestResultRow } from '@/playground/components/test-suite-panel/components/row';
-import { TestResultsSummary } from '@/playground/components/test-suite-panel/components/summary';
-import { TestRunner } from '@/playground/engine/test-runner';
-import { subjectAtom, testHistoryAtom } from '@/playground/store/atoms';
+import { TestCaseEditor } from '@playground/components/test-case-editor';
+import { TestResultRow } from '@playground/components/test-suite-panel/components/row';
+import { TestResultsSummary } from '@playground/components/test-suite-panel/components/summary';
+import { TestRunner } from '@playground/engine/test-runner';
+import { subjectAtom, testHistoryAtom } from '@playground/store/atoms';
 import {
   filteredResultsAtom,
   isRunningTestsAtom,
   testFilterAtom,
   testResultsAtom,
   testSuiteAtom
-} from '@/playground/store/test-suite-atoms';
+} from '@playground/store/test-suite-atoms';
 import type {
   TestCase,
   TestResult,
   TestSuite
-} from '@/playground/types/test-suite';
+} from '@playground/types/test-suite';
 
 export const TestSuitePanel = () => {
   const [suite, setSuite] = useAtom(testSuiteAtom);
