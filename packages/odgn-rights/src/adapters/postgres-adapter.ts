@@ -696,13 +696,18 @@ export class PostgresAdapter extends BaseAdapter {
       (row: { id: number }) => (row as { id: number }).id
     );
 
+    // Generate placeholders for IN clause (Bun's SQL driver doesn't support ANY($1) with arrays)
+    const subjectIdPlaceholders = subjectIds
+      .map((_: number, i: number) => `$${i + 1}`)
+      .join(', ');
+
     // Query 3: Batch load subject-role mappings for these subjects only
     const subjectRoleRows = await this.sql.unsafe(
       `SELECT sr.subject_id, r.name as role_name
        FROM ${subjectRoles} sr
        JOIN ${roles} r ON sr.role_id = r.id
-       WHERE sr.subject_id = ANY($1)`,
-      [subjectIds]
+       WHERE sr.subject_id IN (${subjectIdPlaceholders})`,
+      subjectIds
     );
 
     // Query 4: Batch load subject direct rights for these subjects only
@@ -710,8 +715,8 @@ export class PostgresAdapter extends BaseAdapter {
       `SELECT sr.subject_id, rt.*
        FROM ${subjectRights} sr
        JOIN ${rights} rt ON sr.right_id = rt.id
-       WHERE sr.subject_id = ANY($1)`,
-      [subjectIds]
+       WHERE sr.subject_id IN (${subjectIdPlaceholders})`,
+      subjectIds
     );
 
     // Get unique role names to fetch only relevant role rights
@@ -724,13 +729,16 @@ export class PostgresAdapter extends BaseAdapter {
     // Query 5: Batch load role rights for only the roles used by these subjects
     let roleRightRows: unknown[] = [];
     if (roleNames.length > 0) {
+      const roleNamePlaceholders = roleNames
+        .map((_, i) => `$${i + 1}`)
+        .join(', ');
       roleRightRows = await this.sql.unsafe(
         `SELECT r.name as role_name, rt.*
          FROM ${roleRights} rr
          JOIN ${roles} r ON rr.role_id = r.id
          JOIN ${rights} rt ON rr.right_id = rt.id
-         WHERE r.name = ANY($1)`,
-        [roleNames]
+         WHERE r.name IN (${roleNamePlaceholders})`,
+        roleNames
       );
     }
 
