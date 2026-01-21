@@ -7,7 +7,14 @@ import { Role } from '../role';
 import { RoleRegistry } from '../role-registry';
 import { Subject } from '../subject';
 import { BaseAdapter } from './base-adapter';
-import type { BaseAdapterOptions, DatabaseAdapter, RightsRow } from './types';
+import type {
+  BaseAdapterOptions,
+  DatabaseAdapter,
+  PaginatedResult,
+  PaginationOptions,
+  RightsRow,
+  SubjectWithIdentifier
+} from './types';
 
 export type RedisAdapterOptions = BaseAdapterOptions & {
   db?: number;
@@ -571,6 +578,340 @@ export class RedisAdapter extends BaseAdapter {
     await pipeline.exec();
 
     return true;
+  }
+
+  /**
+   * Load all subjects with their identifiers using optimized batch loading.
+   * Uses Redis pipeline to load all data in a constant number of round-trips.
+   */
+  async loadSubjects(): Promise<SubjectWithIdentifier[]> {
+    if (!this.redis) {
+      throw new Error('Not connected');
+    }
+
+    // Get all subject identifiers
+    const allSubjectsKey = this.key('subjects', '_all');
+    const subjectIdentifiers = await this.redis.smembers(allSubjectsKey);
+
+    if (subjectIdentifiers.length === 0) {
+      return [];
+    }
+
+    // Batch load all subject roles using pipeline
+    const rolesPipeline = this.redis.pipeline();
+    for (const identifier of subjectIdentifiers) {
+      rolesPipeline.smembers(this.key('subjects', identifier, 'roles'));
+    }
+    const rolesResults = await rolesPipeline.exec();
+
+    // Build subject -> roles mapping
+    const subjectRolesMap = new Map<string, string[]>();
+    for (let i = 0; i < subjectIdentifiers.length; i++) {
+      const identifier = subjectIdentifiers[i]!;
+      const result = rolesResults?.[i];
+      if (result && !result[0]) {
+        subjectRolesMap.set(identifier, result[1] as string[]);
+      } else {
+        subjectRolesMap.set(identifier, []);
+      }
+    }
+
+    // Collect all unique role names
+    const allRoleNames = new Set<string>();
+    for (const roles of subjectRolesMap.values()) {
+      for (const roleName of roles) {
+        allRoleNames.add(roleName);
+      }
+    }
+
+    // Batch load all role rights using pipeline
+    const roleRightIdsPipeline = this.redis.pipeline();
+    const roleNamesArray = Array.from(allRoleNames);
+    for (const roleName of roleNamesArray) {
+      roleRightIdsPipeline.smembers(this.key('roles', roleName, 'rights'));
+    }
+    const roleRightIdsResults = await roleRightIdsPipeline.exec();
+
+    // Build role -> right IDs mapping
+    const roleRightIdsMap = new Map<string, string[]>();
+    for (let i = 0; i < roleNamesArray.length; i++) {
+      const roleName = roleNamesArray[i]!;
+      const result = roleRightIdsResults?.[i];
+      if (result && !result[0]) {
+        roleRightIdsMap.set(roleName, result[1] as string[]);
+      } else {
+        roleRightIdsMap.set(roleName, []);
+      }
+    }
+
+    // Batch load all subject direct rights using pipeline
+    const directRightsPipeline = this.redis.pipeline();
+    for (const identifier of subjectIdentifiers) {
+      directRightsPipeline.smembers(this.key('subjects', identifier, 'rights'));
+    }
+    const directRightsResults = await directRightsPipeline.exec();
+
+    // Build subject -> direct right IDs mapping
+    const subjectDirectRightIdsMap = new Map<string, string[]>();
+    for (let i = 0; i < subjectIdentifiers.length; i++) {
+      const identifier = subjectIdentifiers[i]!;
+      const result = directRightsResults?.[i];
+      if (result && !result[0]) {
+        subjectDirectRightIdsMap.set(identifier, result[1] as string[]);
+      } else {
+        subjectDirectRightIdsMap.set(identifier, []);
+      }
+    }
+
+    // Collect all unique right IDs
+    const allRightIds = new Set<string>();
+    for (const rightIds of roleRightIdsMap.values()) {
+      for (const id of rightIds) {
+        allRightIds.add(id);
+      }
+    }
+    for (const rightIds of subjectDirectRightIdsMap.values()) {
+      for (const id of rightIds) {
+        allRightIds.add(id);
+      }
+    }
+
+    // Batch load all rights using pipeline
+    const rightsPipeline = this.redis.pipeline();
+    const rightIdsArray = Array.from(allRightIds);
+    for (const rightId of rightIdsArray) {
+      rightsPipeline.hgetall(this.key('rights', rightId));
+    }
+    const rightsResults = await rightsPipeline.exec();
+
+    // Build right ID -> Right mapping
+    const rightsMap = new Map<string, Right>();
+    for (let i = 0; i < rightIdsArray.length; i++) {
+      const rightId = rightIdsArray[i]!;
+      const result = rightsResults?.[i];
+      if (result && !result[0] && result[1]) {
+        const data = result[1] as Record<string, string>;
+        if (Object.keys(data).length > 0) {
+          const row = this.hashToRightsRow(data);
+          rightsMap.set(rightId, this.rowToRight(row));
+        }
+      }
+    }
+
+    // Build role -> Rights mapping
+    const roleRightsMap = new Map<string, Rights>();
+    for (const [roleName, rightIds] of roleRightIdsMap) {
+      const rights = new Rights();
+      for (const rightId of rightIds) {
+        const right = rightsMap.get(rightId);
+        if (right) {
+          rights.add(right);
+        }
+      }
+      roleRightsMap.set(roleName, rights);
+    }
+
+    // Build result array
+    const result: SubjectWithIdentifier[] = [];
+
+    for (const identifier of subjectIdentifiers) {
+      const subject = new Subject();
+
+      // Add roles with their rights
+      const roleNames = subjectRolesMap.get(identifier) ?? [];
+      for (const roleName of roleNames) {
+        const roleRights = roleRightsMap.get(roleName) ?? new Rights();
+        const role = new Role(roleName, roleRights);
+        subject.memberOf(role);
+      }
+
+      // Add direct rights
+      const directRightIds = subjectDirectRightIdsMap.get(identifier) ?? [];
+      for (const rightId of directRightIds) {
+        const right = rightsMap.get(rightId);
+        if (right) {
+          subject.rights.add(right);
+        }
+      }
+
+      result.push({ identifier, subject });
+    }
+
+    return result;
+  }
+
+  /**
+   * Load subjects with pagination using optimized batch loading.
+   * Uses Redis pipeline to load all data in a constant number of round-trips.
+   */
+  async loadSubjectsPaginated(
+    options: PaginationOptions
+  ): Promise<PaginatedResult<SubjectWithIdentifier>> {
+    if (!this.redis) {
+      throw new Error('Not connected');
+    }
+
+    const { page, pageSize } = options;
+
+    // Get all subject identifiers (Redis sets don't support efficient pagination)
+    const allSubjectsKey = this.key('subjects', '_all');
+    const allIdentifiers = await this.redis.smembers(allSubjectsKey);
+    const total = allIdentifiers.length;
+
+    if (total === 0) {
+      return { items: [], total: 0 };
+    }
+
+    // Sort for consistent ordering and apply pagination
+    allIdentifiers.sort();
+    const offset = (page - 1) * pageSize;
+    const subjectIdentifiers = allIdentifiers.slice(offset, offset + pageSize);
+
+    if (subjectIdentifiers.length === 0) {
+      return { items: [], total };
+    }
+
+    // Batch load all subject roles using pipeline
+    const rolesPipeline = this.redis.pipeline();
+    for (const identifier of subjectIdentifiers) {
+      rolesPipeline.smembers(this.key('subjects', identifier, 'roles'));
+    }
+    const rolesResults = await rolesPipeline.exec();
+
+    // Build subject -> roles mapping
+    const subjectRolesMap = new Map<string, string[]>();
+    for (let i = 0; i < subjectIdentifiers.length; i++) {
+      const identifier = subjectIdentifiers[i]!;
+      const result = rolesResults?.[i];
+      if (result && !result[0]) {
+        subjectRolesMap.set(identifier, result[1] as string[]);
+      } else {
+        subjectRolesMap.set(identifier, []);
+      }
+    }
+
+    // Collect all unique role names
+    const allRoleNames = new Set<string>();
+    for (const roles of subjectRolesMap.values()) {
+      for (const roleName of roles) {
+        allRoleNames.add(roleName);
+      }
+    }
+
+    // Batch load all role rights using pipeline
+    const roleRightIdsPipeline = this.redis.pipeline();
+    const roleNamesArray = Array.from(allRoleNames);
+    for (const roleName of roleNamesArray) {
+      roleRightIdsPipeline.smembers(this.key('roles', roleName, 'rights'));
+    }
+    const roleRightIdsResults = await roleRightIdsPipeline.exec();
+
+    // Build role -> right IDs mapping
+    const roleRightIdsMap = new Map<string, string[]>();
+    for (let i = 0; i < roleNamesArray.length; i++) {
+      const roleName = roleNamesArray[i]!;
+      const result = roleRightIdsResults?.[i];
+      if (result && !result[0]) {
+        roleRightIdsMap.set(roleName, result[1] as string[]);
+      } else {
+        roleRightIdsMap.set(roleName, []);
+      }
+    }
+
+    // Batch load all subject direct rights using pipeline
+    const directRightsPipeline = this.redis.pipeline();
+    for (const identifier of subjectIdentifiers) {
+      directRightsPipeline.smembers(this.key('subjects', identifier, 'rights'));
+    }
+    const directRightsResults = await directRightsPipeline.exec();
+
+    // Build subject -> direct right IDs mapping
+    const subjectDirectRightIdsMap = new Map<string, string[]>();
+    for (let i = 0; i < subjectIdentifiers.length; i++) {
+      const identifier = subjectIdentifiers[i]!;
+      const result = directRightsResults?.[i];
+      if (result && !result[0]) {
+        subjectDirectRightIdsMap.set(identifier, result[1] as string[]);
+      } else {
+        subjectDirectRightIdsMap.set(identifier, []);
+      }
+    }
+
+    // Collect all unique right IDs
+    const allRightIds = new Set<string>();
+    for (const rightIds of roleRightIdsMap.values()) {
+      for (const id of rightIds) {
+        allRightIds.add(id);
+      }
+    }
+    for (const rightIds of subjectDirectRightIdsMap.values()) {
+      for (const id of rightIds) {
+        allRightIds.add(id);
+      }
+    }
+
+    // Batch load all rights using pipeline
+    const rightsPipeline = this.redis.pipeline();
+    const rightIdsArray = Array.from(allRightIds);
+    for (const rightId of rightIdsArray) {
+      rightsPipeline.hgetall(this.key('rights', rightId));
+    }
+    const rightsResults = await rightsPipeline.exec();
+
+    // Build right ID -> Right mapping
+    const rightsMap = new Map<string, Right>();
+    for (let i = 0; i < rightIdsArray.length; i++) {
+      const rightId = rightIdsArray[i]!;
+      const result = rightsResults?.[i];
+      if (result && !result[0] && result[1]) {
+        const data = result[1] as Record<string, string>;
+        if (Object.keys(data).length > 0) {
+          const row = this.hashToRightsRow(data);
+          rightsMap.set(rightId, this.rowToRight(row));
+        }
+      }
+    }
+
+    // Build role -> Rights mapping
+    const roleRightsMap = new Map<string, Rights>();
+    for (const [roleName, rightIds] of roleRightIdsMap) {
+      const rights = new Rights();
+      for (const rightId of rightIds) {
+        const right = rightsMap.get(rightId);
+        if (right) {
+          rights.add(right);
+        }
+      }
+      roleRightsMap.set(roleName, rights);
+    }
+
+    // Build result array
+    const items: SubjectWithIdentifier[] = [];
+
+    for (const identifier of subjectIdentifiers) {
+      const subject = new Subject();
+
+      // Add roles with their rights
+      const roleNames = subjectRolesMap.get(identifier) ?? [];
+      for (const roleName of roleNames) {
+        const roleRights = roleRightsMap.get(roleName) ?? new Rights();
+        const role = new Role(roleName, roleRights);
+        subject.memberOf(role);
+      }
+
+      // Add direct rights
+      const directRightIds = subjectDirectRightIdsMap.get(identifier) ?? [];
+      for (const rightId of directRightIds) {
+        const right = rightsMap.get(rightId);
+        if (right) {
+          subject.rights.add(right);
+        }
+      }
+
+      items.push({ identifier, subject });
+    }
+
+    return { items, total };
   }
 
   protected async getAllSubjectIdentifiers(): Promise<string[]> {

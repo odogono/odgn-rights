@@ -58,6 +58,34 @@ export type SubjectRightRow = {
 };
 
 // ============================================================================
+// Pagination Types
+// ============================================================================
+
+/**
+ * Options for paginated queries
+ */
+export type PaginationOptions = {
+  page: number;
+  pageSize: number;
+};
+
+/**
+ * Result of a paginated query
+ */
+export type PaginatedResult<T> = {
+  items: T[];
+  total: number;
+};
+
+/**
+ * A subject paired with its external identifier
+ */
+export type SubjectWithIdentifier = {
+  identifier: string;
+  subject: Subject;
+};
+
+// ============================================================================
 // Adapter Configuration Types
 // ============================================================================
 
@@ -186,6 +214,21 @@ export type DatabaseAdapter = {
    * Load a subject by its external identifier
    */
   loadSubject(identifier: string): Promise<Subject | null>;
+
+  /**
+   * Load all subjects with their identifiers using optimized batch loading.
+   * This avoids N+1 queries by loading all data in a constant number of queries.
+   */
+  loadSubjects(): Promise<SubjectWithIdentifier[]>;
+
+  /**
+   * Load subjects with pagination using optimized batch loading.
+   * @param options Pagination options (page number and page size)
+   * @returns Paginated result with subjects and total count
+   */
+  loadSubjectsPaginated(
+    options: PaginationOptions
+  ): Promise<PaginatedResult<SubjectWithIdentifier>>;
 
   /**
    * Run database migrations to create or update schema

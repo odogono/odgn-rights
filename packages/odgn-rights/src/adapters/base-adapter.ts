@@ -8,7 +8,10 @@ import { DEFAULT_TABLE_PREFIX, createTableNames } from './schema';
 import type {
   BaseAdapterOptions,
   DatabaseAdapter,
+  PaginatedResult,
+  PaginationOptions,
   RightsRow,
+  SubjectWithIdentifier,
   TableNames
 } from './types';
 
@@ -170,6 +173,22 @@ export abstract class BaseAdapter implements DatabaseAdapter {
   abstract saveSubject(identifier: string, subject: Subject): Promise<number>;
   abstract loadSubject(identifier: string): Promise<Subject | null>;
   abstract deleteSubject(identifier: string): Promise<boolean>;
+
+  /**
+   * Load all subjects with their identifiers using optimized batch loading.
+   * Subclasses should implement this with batch JOINs to avoid N+1 queries.
+   */
+  abstract loadSubjects(): Promise<SubjectWithIdentifier[]>;
+
+  /**
+   * Load subjects with pagination using optimized batch loading.
+   * Subclasses should implement this with batch JOINs to avoid N+1 queries.
+   * @param options Pagination options (page number and page size)
+   * @returns Paginated result with subjects and total count
+   */
+  abstract loadSubjectsPaginated(
+    options: PaginationOptions
+  ): Promise<PaginatedResult<SubjectWithIdentifier>>;
 
   /**
    * Get all subject identifiers from the database.

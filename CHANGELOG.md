@@ -1,3 +1,14 @@
+## 0.6.1 - 2026-01-21
+
+### Added
+
+- **Batch Subject Loading**: New optimized methods for loading multiple subjects without N+1 query problems.
+  - `loadSubjects()`: Load all subjects with their roles and rights using batch JOINs (4 queries total).
+  - `loadSubjectsPaginated(options)`: Load subjects with pagination using batch JOINs (5 queries total).
+  - New types: `PaginationOptions`, `PaginatedResult<T>`, `SubjectWithIdentifier`.
+  - Implemented in all adapters: `PostgresAdapter`, `SQLiteAdapter`, `RedisAdapter`.
+  - Reduces query count from O(N) to O(1) for listing subjects, fixing timeout issues with large datasets.
+
 ## 0.6.0 - 2026-01-08
 
 ### Changed
