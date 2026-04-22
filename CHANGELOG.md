@@ -1,3 +1,13 @@
+
+
+
+## 0.6.2 - 2026-01-21
+
+
+### Fixed
+
+- postgres adapter not forming sql properly
+
 ## 0.6.1 - 2026-01-21
 
 ### Added
