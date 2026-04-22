@@ -38,6 +38,9 @@ export const getFlagSummary = (flags: number): string => {
   return res.join('');
 };
 
+export const FLAG_TOGGLE_CLASS =
+  'flex items-center gap-2 cursor-pointer rounded px-2 py-1 bg-white/5 hover:bg-white/10 text-sm select-none';
+
 export const FLAG_OPTIONS = [
   { flag: Flags.READ, key: 'r', label: 'Read' },
   { flag: Flags.WRITE, key: 'w', label: 'Write' },

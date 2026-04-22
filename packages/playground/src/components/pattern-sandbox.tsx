@@ -1,6 +1,9 @@
 import { Right } from 'odgn-rights';
 import { useMemo, useState } from 'react';
 
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+
 export const PatternSandbox = () => {
   const [pattern, setPattern] = useState('/org/open/device/**/description');
   const [path, setPath] = useState(
@@ -29,22 +32,20 @@ export const PatternSandbox = () => {
       </header>
       <div className="sandbox-content">
         <div className="input-group">
-          <label htmlFor="pattern-input">Pattern:</label>
-          <input
+          <Label htmlFor="pattern-input">Pattern:</Label>
+          <Input
             id="pattern-input"
             onChange={e => setPattern(e.target.value)}
             placeholder="e.g. /public/**"
-            type="text"
             value={pattern}
           />
         </div>
         <div className="input-group">
-          <label htmlFor="path-input">Test Path:</label>
-          <input
+          <Label htmlFor="path-input">Test Path:</Label>
+          <Input
             id="path-input"
             onChange={e => setPath(e.target.value)}
             placeholder="e.g. /public/images/logo.png"
-            type="text"
             value={path}
           />
         </div>
@@ -55,9 +56,9 @@ export const PatternSandbox = () => {
           {result.error ? (
             <span className="error">Error: {result.error}</span>
           ) : result.matches ? (
-            <span className="success">✓ Matches!</span>
+            <span>✓ Matches!</span>
           ) : (
-            <span className="failure">✗ No match</span>
+            <span>✗ No match</span>
           )}
         </div>
       </div>

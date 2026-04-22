@@ -1,5 +1,9 @@
 import { useAtom } from 'jotai';
 
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { DatetimeInput } from '@/components/ui/datetime-input';
+import { Label } from '@/components/ui/label';
 import { simulatedTimeAtom } from '../store/atoms';
 
 const pad = (n: number) => n.toString().padStart(2, '0');
@@ -27,63 +31,40 @@ export const TimeSimulator = () => {
 
   return (
     <div
-      className="time-simulator"
-      style={{
-        border: '1px solid #ccc',
-        borderRadius: '4px',
-        marginTop: '1rem',
-        padding: '0.5rem'
-      }}
+      className="time-simulator rounded border border-white/10 mt-4 p-3 flex flex-col gap-2"
     >
-      <label
-        style={{
-          alignItems: 'center',
-          cursor: 'pointer',
-          display: 'flex',
-          gap: '8px'
-        }}
-      >
-        <input
+      <div className="flex items-center gap-2">
+        <Checkbox
           checked={!isLive}
-          onChange={e => setTime(e.target.checked ? new Date() : null)}
-          type="checkbox"
+          id="simulate-time"
+          onCheckedChange={checked => setTime(checked ? new Date() : null)}
         />
-        <strong>Simulate Time</strong>
-      </label>
+        <Label className="cursor-pointer font-semibold" htmlFor="simulate-time">
+          Simulate Time
+        </Label>
+      </div>
 
       {!isLive && (
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '8px',
-            marginTop: '8px'
-          }}
-        >
+        <div className="flex flex-col gap-2">
           <label className="sr-only" htmlFor="simulated-time">
             Select simulated time:
           </label>
-          <input
+          <DatetimeInput
             id="simulated-time"
             onChange={handleTimeChange}
-            style={{ padding: '4px', width: '100%' }}
-            type="datetime-local"
             value={formatTime(time!)}
           />
 
-          <div
-            className="time-controls"
-            style={{ display: 'flex', gap: '4px' }}
-          >
-            <button onClick={() => adjustDays(-1)} style={{ flex: 1 }}>
+          <div className="flex gap-1.5">
+            <Button className="flex-1" onClick={() => adjustDays(-1)} size="xs" variant="outline">
               -1 Day
-            </button>
-            <button onClick={() => setTime(new Date())} style={{ flex: 1 }}>
+            </Button>
+            <Button className="flex-1" onClick={() => setTime(new Date())} size="xs" variant="outline">
               Now
-            </button>
-            <button onClick={() => adjustDays(1)} style={{ flex: 1 }}>
+            </Button>
+            <Button className="flex-1" onClick={() => adjustDays(1)} size="xs" variant="outline">
               +1 Day
-            </button>
+            </Button>
           </div>
         </div>
       )}

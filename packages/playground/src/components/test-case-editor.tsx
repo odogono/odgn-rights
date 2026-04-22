@@ -1,7 +1,18 @@
-// playground/src/components/test-case-editor.tsx
 import { useState } from 'react';
 
-import { FLAG_OPTIONS } from '../helpers/flags';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { DatetimeInput } from '@/components/ui/datetime-input';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '@/components/ui/select';
+import { FLAG_OPTIONS, FLAG_TOGGLE_CLASS } from '../helpers/flags';
 import type { TestCase } from '../types/test-suite';
 
 type TestCaseEditorProps = {
@@ -43,83 +54,83 @@ export const TestCaseEditor = ({
 
   return (
     <div className="test-case-editor">
-      <h3>{testCase?.id ? 'Edit Test Case' : 'New Test Case'}</h3>
+      <h3 className="font-semibold mb-3">{testCase?.id ? 'Edit Test Case' : 'New Test Case'}</h3>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          Path:
-          <input
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="tc-path">Path:</Label>
+          <Input
+            id="tc-path"
             onChange={e => setPath(e.target.value)}
             placeholder="/path/to/resource"
-            type="text"
             value={path}
           />
-        </label>
+        </div>
 
         <div className="flag-toggles">
           {FLAG_OPTIONS.map(({ flag, label }) => (
-            <label className="flag-toggle" key={flag}>
-              <input
+            <label className={FLAG_TOGGLE_CLASS} key={flag}>
+              <Checkbox
                 checked={(flags & flag) === flag}
-                onChange={() => toggleFlag(flag)}
-                type="checkbox"
+                onCheckedChange={() => toggleFlag(flag)}
               />
               <span>{label}</span>
             </label>
           ))}
         </div>
 
-        <label style={{ alignItems: 'center', display: 'flex', gap: '8px' }}>
-          Expected Result:
-          <select
-            onChange={e => setExpected(e.target.value === 'allow')}
+        <div className="flex items-center gap-3">
+          <Label>Expected Result:</Label>
+          <Select
+            onValueChange={v => setExpected(v === 'allow')}
             value={expected ? 'allow' : 'deny'}
           >
-            <option value="allow">Allow</option>
-            <option value="deny">Deny</option>
-          </select>
-        </label>
+            <SelectTrigger className="h-8 text-xs w-[100px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="allow">Allow</SelectItem>
+              <SelectItem value="deny">Deny</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
 
-        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          Description (optional):
-          <input
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="tc-desc">Description (optional):</Label>
+          <Input
+            id="tc-desc"
             onChange={e => setDescription(e.target.value)}
             placeholder="e.g. Admin can read everything"
-            type="text"
             value={description}
           />
-        </label>
+        </div>
 
-        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          Simulated Time (optional):
-          <input
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="tc-time">Simulated Time (optional):</Label>
+          <DatetimeInput
+            id="tc-time"
             onChange={e => setSimulatedTime(e.target.value)}
-            type="datetime-local"
             value={simulatedTime}
           />
-        </label>
+        </div>
 
-        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          Tags (comma separated):
-          <input
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="tc-tags">Tags (comma separated):</Label>
+          <Input
+            id="tc-tags"
             onChange={e => setTags(e.target.value)}
             placeholder="admin, core, rbac"
-            type="text"
             value={tags}
           />
-        </label>
+        </div>
 
-        <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-          <button disabled={!path || flags === 0} onClick={handleSave}>
+        <div className="flex gap-2 mt-2">
+          <Button disabled={!path || flags === 0} onClick={handleSave} size="sm">
             Save
-          </button>
-          <button
-            className="secondary"
-            onClick={onCancel}
-            style={{ backgroundColor: '#444' }}
-          >
+          </Button>
+          <Button onClick={onCancel} size="sm" variant="outline">
             Cancel
-          </button>
+          </Button>
         </div>
       </div>
     </div>

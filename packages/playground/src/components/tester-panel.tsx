@@ -1,7 +1,12 @@
 import { useAtom, useAtomValue } from 'jotai';
 import { useMemo, useState } from 'react';
 
-import { FLAG_OPTIONS, getFlagName, getFlagSummary } from '../helpers/flags';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { FLAG_OPTIONS, FLAG_TOGGLE_CLASS, getFlagName, getFlagSummary } from '../helpers/flags';
 import {
   configAtom,
   testFlagsAtom,
@@ -40,7 +45,6 @@ export const TesterPanel = () => {
     setHistory(prev => [entry, ...prev].slice(0, 20));
   };
 
-  // Extract paths for autocomplete
   const suggestedPaths = useMemo(() => {
     const paths = new Set<string>();
     config.roles.forEach(role => {
@@ -72,21 +76,21 @@ export const TesterPanel = () => {
 
       <div className="panel-content">
         <div className="test-inputs">
-          <label htmlFor="test-path">Path:</label>
-          <input
-            id="test-path"
-            list="path-suggestions"
-            onChange={e => setPath(e.target.value)}
-            placeholder="/path/to/resource"
-            style={{ marginBottom: '12px', marginTop: '4px', width: '100%' }}
-            type="text"
-            value={path}
-          />
-          <datalist id="path-suggestions">
-            {suggestedPaths.map(p => (
-              <option key={p} value={p} />
-            ))}
-          </datalist>
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="test-path">Path:</Label>
+            <Input
+              id="test-path"
+              list="path-suggestions"
+              onChange={e => setPath(e.target.value)}
+              placeholder="/path/to/resource"
+              value={path}
+            />
+            <datalist id="path-suggestions">
+              {suggestedPaths.map(p => (
+                <option key={p} value={p} />
+              ))}
+            </datalist>
+          </div>
 
           <div
             aria-label="Permission flags"
@@ -94,21 +98,20 @@ export const TesterPanel = () => {
             role="group"
           >
             {FLAG_OPTIONS.map(({ flag, key, label }) => (
-              <label className="flag-toggle" key={flag}>
-                <input
+              <label className={FLAG_TOGGLE_CLASS} key={flag}>
+                <Checkbox
                   checked={(flags & flag) === flag}
-                  onChange={() => toggleFlag(flag)}
-                  type="checkbox"
+                  onCheckedChange={() => toggleFlag(flag)}
                 />
                 <span>{label}</span>
-                <kbd style={{ fontSize: '0.8rem', opacity: 0.6 }}>({key})</kbd>
+                <kbd className="text-xs opacity-50">({key})</kbd>
               </label>
             ))}
           </div>
 
-          <button disabled={!path || flags === 0} onClick={runTest}>
+          <Button disabled={!path || flags === 0} onClick={runTest} size="sm">
             Test
-          </button>
+          </Button>
         </div>
 
         <div aria-live="polite">
@@ -126,61 +129,36 @@ export const TesterPanel = () => {
               marginBottom: '8px'
             }}
           >
-            <h3>History</h3>
-            <button
+            <h3 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 600 }}>History</h3>
+            <Button
               onClick={() => setShowHistory(!showHistory)}
-              style={{ fontSize: '0.8rem', padding: '2px 8px' }}
+              size="xs"
+              variant="ghost"
             >
               {showHistory ? 'Hide' : 'Show'}
-            </button>
+            </Button>
           </header>
 
           {showHistory && history.length > 0 && (
-            <ul
-              style={{
-                border: '1px solid #eee',
-                borderRadius: '4px',
-                fontSize: '0.85rem',
-                listStyle: 'none',
-                margin: 0,
-                maxHeight: '200px',
-                overflowY: 'auto',
-                padding: 0
-              }}
-            >
+            <ScrollArea className="h-48 rounded border border-white/10">
               {history.map(entry => (
-                <li
+                <button
+                  className={`w-full text-left flex justify-between items-center px-2 py-1.5 text-xs border-b border-white/5 last:border-0 cursor-pointer hover:bg-white/5 ${entry.allowed ? 'bg-green-500/4' : 'bg-red-500/4'}`}
                   key={entry.id}
                   onClick={() => {
                     setPath(entry.path);
                     setFlags(entry.flags);
                   }}
-                  style={{
-                    backgroundColor: entry.allowed
-                      ? 'rgba(0, 255, 0, 0.05)'
-                      : 'rgba(255, 0, 0, 0.05)',
-                    borderBottom: '1px solid #eee',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    padding: '4px 8px'
-                  }}
                 >
-                  <span
-                    style={{
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap'
-                    }}
-                  >
+                  <span className="truncate">
                     {entry.allowed ? '✓' : '✗'} {entry.path}
                   </span>
-                  <span style={{ fontSize: '0.75rem', opacity: 0.5 }}>
+                  <span className="opacity-40 shrink-0 ml-2">
                     {getFlagSummary(entry.flags)}
                   </span>
-                </li>
+                </button>
               ))}
-            </ul>
+            </ScrollArea>
           )}
           {showHistory && history.length === 0 && (
             <div

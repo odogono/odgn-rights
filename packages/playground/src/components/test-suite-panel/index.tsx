@@ -1,7 +1,8 @@
-// playground/src/components/test-suite-panel.tsx
 import { useAtom, useAtomValue, useSetAtom } from 'jotai';
 import { useRef, useState } from 'react';
 
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { TestCaseEditor } from '@playground/components/test-case-editor';
 import { TestResultRow } from '@playground/components/test-suite-panel/components/row';
 import { TestResultsSummary } from '@playground/components/test-suite-panel/components/summary';
@@ -41,7 +42,6 @@ export const TestSuitePanel = () => {
 
     setIsRunning(true);
 
-    // Run in next tick to allow UI to update
     await new Promise(resolve => setTimeout(resolve, 0));
 
     const runner = new TestRunner(subject);
@@ -102,7 +102,7 @@ export const TestSuitePanel = () => {
       }
     };
     reader.readAsText(file);
-    e.target.value = ''; // Reset for next time
+    e.target.value = '';
   };
 
   const exportSuite = () => {
@@ -157,20 +157,13 @@ export const TestSuitePanel = () => {
     <section className="panel test-suite-panel">
       <header className="panel-header">
         <h2>Test Suite</h2>
-        <div className="header-actions" style={{ display: 'flex', gap: '8px' }}>
-          <button
-            onClick={importSuite}
-            style={{ fontSize: '0.8rem', padding: '2px 8px' }}
-          >
+        <div className="header-actions" style={{ display: 'flex', gap: '6px' }}>
+          <Button onClick={importSuite} size="xs" variant="outline">
             Import
-          </button>
-          <button
-            disabled={!suite}
-            onClick={exportSuite}
-            style={{ fontSize: '0.8rem', padding: '2px 8px' }}
-          >
+          </Button>
+          <Button disabled={!suite} onClick={exportSuite} size="xs" variant="outline">
             Export
-          </button>
+          </Button>
           <input
             accept=".json"
             onChange={handleFileChange}
@@ -193,72 +186,50 @@ export const TestSuitePanel = () => {
         {suite ? (
           <>
             <div className="suite-info" style={{ marginBottom: '1rem' }}>
-              <input
-                onBlur={e =>
-                  (e.target.style.borderBottom = '1px solid transparent')
-                }
+              <Input
+                className="border-0 border-b border-transparent bg-transparent p-0 text-lg font-bold rounded-none focus-visible:ring-0 focus-visible:border-b focus-visible:border-white/30 h-auto"
                 onChange={e => setSuite({ ...suite, name: e.target.value })}
-                onFocus={e => (e.target.style.borderBottom = '1px solid #ccc')}
-                style={{
-                  border: 'none',
-                  borderBottom: '1px solid transparent',
-                  fontSize: '1.2rem',
-                  fontWeight: 'bold',
-                  width: '100%'
-                }}
-                type="text"
                 value={suite.name}
               />
               <textarea
+                className="w-full bg-transparent border-none resize-none text-sm opacity-60 outline-none mt-1"
                 onChange={e =>
                   setSuite({ ...suite, description: e.target.value })
                 }
                 placeholder="Suite description..."
-                style={{
-                  border: 'none',
-                  fontSize: '0.9rem',
-                  opacity: 0.7,
-                  resize: 'none',
-                  width: '100%'
-                }}
                 value={suite.description}
               />
-              <span
-                className="test-count"
-                style={{ fontSize: '0.8rem', opacity: 0.5 }}
-              >
-                {suite.tests.length} tests
-              </span>
+              <span className="text-xs opacity-40">{suite.tests.length} tests</span>
             </div>
 
-            <div
-              className="suite-controls"
-              style={{ display: 'flex', gap: '8px', marginBottom: '1rem' }}
-            >
-              <button
-                className="run-all-btn"
+            <div className="flex gap-2 mb-4">
+              <Button
+                className="flex-1 font-semibold"
                 disabled={isRunning || suite.tests.length === 0}
                 onClick={runAllTests}
-                style={{ flex: 1 }}
+                size="sm"
+                variant="default"
               >
-                {isRunning ? 'Running...' : '▶ Run All Tests'}
-              </button>
+                {isRunning ? 'Running…' : '▶ Run All Tests'}
+              </Button>
 
-              <button
+              <Button
                 onClick={() => setEditingTestCase({})}
-                style={{ padding: '4px 12px' }}
+                size="sm"
+                variant="outline"
               >
                 + Add Test
-              </button>
+              </Button>
 
-              <button
+              <Button
                 disabled={history.length === 0}
                 onClick={addTestFromHistory}
-                style={{ padding: '4px 12px' }}
+                size="sm"
                 title="Add all tests from recent history"
+                variant="outline"
               >
-                + From History
-              </button>
+                + History
+              </Button>
             </div>
 
             {results && (
@@ -271,9 +242,7 @@ export const TestSuitePanel = () => {
 
             <div className="test-list" style={{ marginTop: '1rem' }}>
               {suite.tests.length === 0 && (
-                <div
-                  style={{ opacity: 0.5, padding: '2rem', textAlign: 'center' }}
-                >
+                <div className="text-center opacity-40 py-8 text-sm">
                   No tests in this suite yet.
                 </div>
               )}
@@ -296,11 +265,9 @@ export const TestSuitePanel = () => {
             </div>
           </>
         ) : (
-          <div style={{ padding: '2rem', textAlign: 'center' }}>
-            <p style={{ marginBottom: '1rem', opacity: 0.7 }}>
-              No test suite loaded.
-            </p>
-            <button onClick={createNewSuite}>Create New Suite</button>
+          <div className="flex flex-col items-center justify-center gap-4 py-12 text-center">
+            <p className="opacity-60 text-sm">No test suite loaded.</p>
+            <Button onClick={createNewSuite}>Create New Suite</Button>
           </div>
         )}
       </div>

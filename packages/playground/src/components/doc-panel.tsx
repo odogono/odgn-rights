@@ -1,23 +1,22 @@
 import { useSetAtom } from 'jotai';
 
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle
+} from '@/components/ui/dialog';
 import { showDocAtom } from '../store/atoms';
 
 export const DocPanel = () => {
   const setShowDoc = useSetAtom(showDocAtom);
 
   return (
-    <div className="doc-overlay" onClick={() => setShowDoc(false)}>
-      <div className="doc-panel" onClick={e => e.stopPropagation()}>
-        <header className="doc-header">
-          <h2>Playground Documentation</h2>
-          <button
-            aria-label="Close documentation"
-            className="close-btn"
-            onClick={() => setShowDoc(false)}
-          >
-            &times;
-          </button>
-        </header>
+    <Dialog onOpenChange={open => !open && setShowDoc(false)} open>
+      <DialogContent aria-describedby={undefined} className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Playground Documentation</DialogTitle>
+        </DialogHeader>
         <div className="doc-content">
           <section>
             <h3>Getting Started</h3>
@@ -89,7 +88,7 @@ export const DocPanel = () => {
             </ul>
           </section>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 };

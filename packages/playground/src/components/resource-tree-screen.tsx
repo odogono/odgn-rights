@@ -3,6 +3,14 @@ import { useAtom, useAtomValue, useSetAtom } from 'jotai';
 import { Flags, type Subject } from 'odgn-rights';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
+import { Button } from '@/components/ui/button';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '@/components/ui/select';
 import {
   parsePlaygroundConfig,
   serializePlaygroundConfig
@@ -239,27 +247,33 @@ export const ResourceTreeScreen = () => {
             </div>
           </div>
           <div className="resource-tree-controls">
-            <label className="resource-role-picker">
+            <div className="resource-role-picker">
               <span>Edit role</span>
-              <select
-                aria-label="Editable role"
-                onChange={e => setSelectedRole(e.target.value || null)}
+              <Select
+                disabled={editableRoles.length === 0}
+                onValueChange={v => setSelectedRole(v || null)}
                 value={selectedRole ?? ''}
               >
-                {editableRoles.length === 0 && <option value="">No role</option>}
-                {editableRoles.map(roleName => (
-                  <option key={roleName} value={roleName}>
-                    {roleName}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
+                <SelectTrigger aria-label="Editable role" className="h-7 text-xs w-[130px]">
+                  <SelectValue placeholder="No role" />
+                </SelectTrigger>
+                <SelectContent>
+                  {editableRoles.map(roleName => (
+                    <SelectItem key={roleName} value={roleName}>
+                      {roleName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button
               disabled={!!validationError || format !== 'json'}
               onClick={handleAddRoot}
+              size="sm"
+              variant="outline"
             >
               Add Root
-            </button>
+            </Button>
           </div>
         </header>
 
@@ -348,9 +362,9 @@ export const ResourceTreeScreen = () => {
         <footer className="panel-footer">
           <div aria-live="polite">
             {validationError ? (
-              <span className="error">{validationError}</span>
+              <span className="error" style={{ fontSize: '0.85rem' }}>{validationError}</span>
             ) : (
-              <span className="success">Config is valid and synced</span>
+              <span className="success" style={{ fontSize: '0.85rem' }}>Config is valid and synced</span>
             )}
           </div>
         </footer>
@@ -443,36 +457,42 @@ const ResourceTreeNode = ({
         </div>
 
         <div className="resource-node-actions">
-          <button
+          <Button
             disabled={structuralDisabled}
             onClick={event => {
               event.stopPropagation();
               onAddChild(node.path);
             }}
+            size="icon-xs"
             title="Add child"
+            variant="ghost"
           >
             +
-          </button>
-          <button
+          </Button>
+          <Button
             disabled={disabled}
             onClick={event => {
               event.stopPropagation();
               onRename(node);
             }}
+            size="xs"
             title="Rename"
+            variant="ghost"
           >
             Rename
-          </button>
-          <button
+          </Button>
+          <Button
             disabled={disabled}
             onClick={event => {
               event.stopPropagation();
               onDelete(node);
             }}
+            size="xs"
             title="Delete"
+            variant="ghost"
           >
             Delete
-          </button>
+          </Button>
         </div>
       </div>
 
