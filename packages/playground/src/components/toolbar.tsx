@@ -1,9 +1,11 @@
 import { useSetAtom } from 'jotai';
 
 import { PRESETS } from '../presets';
+import { serializePlaygroundConfig } from '../helpers/playground-config';
 import {
   editorContentAtom,
   editorFormatAtom,
+  screenModeAtom,
   showDocAtom
 } from '../store/atoms';
 import { configWithHistoryAtom, useHistory } from '../store/history';
@@ -13,15 +15,15 @@ export const Toolbar = () => {
   const setConfig = useSetAtom(configWithHistoryAtom);
   const setEditorContent = useSetAtom(editorContentAtom);
   const setEditorFormat = useSetAtom(editorFormatAtom);
+  const setScreenMode = useSetAtom(screenModeAtom);
   const setShowDoc = useSetAtom(showDocAtom);
 
   const loadPreset = (key: string) => {
     const preset = PRESETS[key];
     if (preset) {
       setConfig(preset.config);
-      // We also update editor content to match
       setEditorFormat('json');
-      setEditorContent(JSON.stringify(preset.config, null, 2));
+      setEditorContent(serializePlaygroundConfig(preset.config));
     }
   };
 
@@ -43,6 +45,10 @@ export const Toolbar = () => {
       </div>
 
       <div className="toolbar-center" style={{ display: 'flex', gap: '8px' }}>
+        <button onClick={() => setScreenMode('classic')}>Classic View</button>
+        <button onClick={() => setScreenMode('resources')}>
+          Resource Tree
+        </button>
         <button disabled={!canUndo} onClick={undo} title="Undo (Ctrl+Z)">
           ↶ Undo
         </button>
@@ -65,11 +71,7 @@ export const Toolbar = () => {
         </button>
         <button
           onClick={() => {
-            const config = JSON.stringify(
-              PRESETS['basic-rbac']?.config,
-              null,
-              2
-            );
+            const config = serializePlaygroundConfig(PRESETS['basic-rbac']!.config);
             navigator.clipboard.writeText(config);
             alert('Basic RBAC config copied to clipboard');
           }}

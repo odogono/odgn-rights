@@ -4,10 +4,13 @@ import { Rights } from 'odgn-rights';
 import { useEffect, useRef } from 'react';
 
 import {
+  parsePlaygroundConfig,
+  serializePlaygroundConfig
+} from '../helpers/playground-config';
+import {
   editorContentAtom,
   editorFormatAtom,
   validationErrorAtom,
-  type PlaygroundConfig
 } from '../store/atoms';
 import { configWithHistoryAtom } from '../store/history';
 
@@ -33,7 +36,7 @@ export const EditorPanel = () => {
   // Sync editor content when config changes (e.g. from preset or undo/redo)
   useEffect(() => {
     if (format === 'json') {
-      const newContent = JSON.stringify(config, null, 2);
+      const newContent = serializePlaygroundConfig(config);
       if (newContent !== content) {
         setContent(newContent);
       }
@@ -45,12 +48,13 @@ export const EditorPanel = () => {
       return;
     }
     try {
-      let parsed: PlaygroundConfig;
+      let parsed;
       if (format === 'json') {
-        parsed = JSON.parse(content);
+        parsed = parsePlaygroundConfig(content);
       } else {
         const rights = Rights.parse(content);
         parsed = {
+          resources: [],
           roles: [],
           subject: { rights: rights.toJSON() }
         };
@@ -94,7 +98,7 @@ export const EditorPanel = () => {
           onScroll={handleScroll}
           placeholder={
             format === 'json'
-              ? 'Enter JSON config...'
+              ? 'Enter JSON config with roles, subject, and resources...'
               : 'Enter rights (e.g. +r:/public/**)'
           }
           ref={textareaRef}

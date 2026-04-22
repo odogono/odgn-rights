@@ -1,10 +1,7 @@
-import type { RoleJSON, SubjectJSON } from 'odgn-rights';
+import type { PlaygroundConfig } from '../helpers/playground-config';
 
 export type Preset = {
-  config: {
-    roles: RoleJSON[];
-    subject: SubjectJSON;
-  };
+  config: PlaygroundConfig;
   description: string;
   name: string;
 };
@@ -12,6 +9,7 @@ export type Preset = {
 export const PRESETS: Record<string, Preset> = {
   'basic-rbac': {
     config: {
+      resources: [],
       roles: [
         {
           name: 'viewer',
@@ -30,6 +28,7 @@ export const PRESETS: Record<string, Preset> = {
   },
   'complex-hierarchy': {
     config: {
+      resources: [],
       roles: [
         {
           name: 'base-employee',
@@ -71,6 +70,7 @@ export const PRESETS: Record<string, Preset> = {
   },
   'deny-override': {
     config: {
+      resources: [],
       roles: [
         {
           name: 'restricted-admin',
@@ -87,6 +87,7 @@ export const PRESETS: Record<string, Preset> = {
   },
   'fine-grained-resource': {
     config: {
+      resources: [],
       roles: [
         {
           name: 'manager',
@@ -114,6 +115,7 @@ export const PRESETS: Record<string, Preset> = {
   },
   'tagged-rights': {
     config: {
+      resources: [],
       roles: [
         {
           name: 'auditor',
@@ -138,6 +140,7 @@ export const PRESETS: Record<string, Preset> = {
   },
   'time-based': {
     config: {
+      resources: [],
       roles: [],
       subject: {
         rights: [
@@ -152,5 +155,43 @@ export const PRESETS: Record<string, Preset> = {
     },
     description: 'Rights with validity windows',
     name: 'Time-Based Rights'
+  },
+  'resource-tree-authoring': {
+    config: {
+      resources: [
+        {
+          children: [
+            {
+              children: [
+                {
+                  children: [{ name: 'metrics' }, { name: 'settings' }],
+                  name: 'dashboard'
+                },
+                {
+                  children: [{ name: 'users' }],
+                  name: 'admin'
+                }
+              ],
+              name: 'staging'
+            }
+          ],
+          name: 'workbench'
+        }
+      ],
+      roles: [
+        {
+          name: 'workbench-guest',
+          rights: [{ allow: 'r', path: '/workbench/staging/dashboard/metrics' }]
+        },
+        {
+          name: 'meta-auditor',
+          rights: [{ allow: 'r', path: '/meta/prod/users' }]
+        }
+      ],
+      subject: { roles: ['workbench-guest', 'meta-auditor'] }
+    },
+    description:
+      'Resource tree editing with explicit resources and inferred rights-only branches',
+    name: 'Resource Tree Authoring'
   }
 };

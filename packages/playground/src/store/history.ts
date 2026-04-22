@@ -1,6 +1,7 @@
 import { atom, useAtom, useSetAtom } from 'jotai';
 
-import { configAtom, type PlaygroundConfig } from './atoms';
+import type { PlaygroundConfig } from '../helpers/playground-config';
+import { configAtom } from './atoms';
 
 type HistoryState = {
   future: PlaygroundConfig[];
