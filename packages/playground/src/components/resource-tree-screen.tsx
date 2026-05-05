@@ -1,9 +1,17 @@
-/* eslint-disable no-alert */
 import { useAtom, useAtomValue, useSetAtom } from 'jotai';
 import { Flags, type Subject } from 'odgn-rights';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
@@ -20,7 +28,7 @@ import {
   buildResourceDisplayTree,
   cycleRoleFlag,
   deleteResourceBranch,
-  getExactRoleFlagState,
+  getEffectiveRoleFlagState,
   getFlagDetails,
   getOverallAccessState,
   getReferencedPaths,
@@ -66,6 +74,16 @@ export const ResourceTreeScreen = () => {
 
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [hoveredPath, setHoveredPath] = useState<string | null>(null);
+  const [addRootOpen, setAddRootOpen] = useState(false);
+  const [addRootName, setAddRootName] = useState('');
+  const [addChildOpen, setAddChildOpen] = useState(false);
+  const [addChildParentPath, setAddChildParentPath] = useState<string | null>(null);
+  const [addChildName, setAddChildName] = useState('');
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameNode, setRenameNode] = useState<ResourceDisplayNode | null>(null);
+  const [renameName, setRenameName] = useState('');
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteNode, setDeleteNode] = useState<ResourceDisplayNode | null>(null);
 
   useEffect(() => {
     if (format !== 'json') {
@@ -105,7 +123,7 @@ export const ResourceTreeScreen = () => {
       RESOURCE_FLAGS.forEach(flag => {
         chipStates.set(
           flag,
-          getExactRoleFlagState(config, selectedRole, node.path, flag)
+          getEffectiveRoleFlagState(config, selectedRole, node.path, flag)
         );
       });
 
@@ -143,62 +161,67 @@ export const ResourceTreeScreen = () => {
     }
   };
 
-  const promptForName = (message: string, value: string = ''): string | null => {
-    const nextName = window.prompt(message, value);
-    if (nextName === null) {
-      return null;
-    }
-    return nextName.trim();
-  };
-
   const withMutationHandling = (run: () => void) => {
     try {
       run();
     } catch (error) {
-      alert((error as Error).message);
+      // Surface error to user — could use a toast here in future
+      console.error((error as Error).message);
     }
   };
 
   const handleAddRoot = () => {
-    const nextName = promptForName('New top-level resource name');
-    if (!nextName) {
-      return;
-    }
+    setAddRootName('');
+    setAddRootOpen(true);
+  };
 
+  const handleAddRootConfirm = () => {
+    const nextName = addRootName.trim();
+    if (!nextName) return;
+    setAddRootOpen(false);
     withMutationHandling(() => {
       syncEditorAndConfig(addResourceNode(config, null, nextName));
     });
   };
 
   const handleAddChild = (path: string) => {
-    const nextName = promptForName('New child resource name');
-    if (!nextName) {
-      return;
-    }
+    setAddChildName('');
+    setAddChildParentPath(path);
+    setAddChildOpen(true);
+  };
 
+  const handleAddChildConfirm = () => {
+    const nextName = addChildName.trim();
+    if (!nextName || !addChildParentPath) return;
+    setAddChildOpen(false);
     withMutationHandling(() => {
-      syncEditorAndConfig(addResourceNode(config, path, nextName));
+      syncEditorAndConfig(addResourceNode(config, addChildParentPath, nextName));
     });
   };
 
   const handleRename = (node: ResourceDisplayNode) => {
-    if (!selectedRole) {
+    if (!selectedRole) return;
+    setRenameName(node.name);
+    setRenameNode(node);
+    setRenameOpen(true);
+  };
+
+  const handleRenameConfirm = () => {
+    if (!renameNode || !selectedRole) return;
+    const nextName = renameName.trim();
+    if (!nextName || nextName === renameNode.name) {
+      setRenameOpen(false);
       return;
     }
-
-    const nextName = promptForName('Rename resource node', node.name);
-    if (!nextName || nextName === node.name) {
-      return;
-    }
-
+    setRenameOpen(false);
     withMutationHandling(() => {
       const nextConfig = renameResourceBranch(
         config,
         selectedRole,
-        node.path,
+        renameNode.path,
         nextName
       );
-      const pathParts = node.path.split('/').filter(Boolean).slice(0, -1);
+      const pathParts = renameNode.path.split('/').filter(Boolean).slice(0, -1);
       const nextPath = `/${[...pathParts, nextName].join('/')}`;
       setSelectedPath(nextPath);
       syncEditorAndConfig(nextConfig);
@@ -206,21 +229,19 @@ export const ResourceTreeScreen = () => {
   };
 
   const handleDelete = (node: ResourceDisplayNode) => {
-    if (!selectedRole) {
-      return;
-    }
-    const confirmed = window.confirm(
-      `Delete ${node.path} and remove selected-role rights below it?`
-    );
-    if (!confirmed) {
-      return;
-    }
+    if (!selectedRole) return;
+    setDeleteNode(node);
+    setDeleteOpen(true);
+  };
 
+  const handleDeleteConfirm = () => {
+    if (!deleteNode || !selectedRole) return;
+    setDeleteOpen(false);
     withMutationHandling(() => {
-      if (selectedPath === node.path) {
+      if (selectedPath === deleteNode.path) {
         setSelectedPath(null);
       }
-      syncEditorAndConfig(deleteResourceBranch(config, selectedRole, node.path));
+      syncEditorAndConfig(deleteResourceBranch(config, selectedRole, deleteNode.path));
     });
   };
 
@@ -369,6 +390,102 @@ export const ResourceTreeScreen = () => {
           </div>
         </footer>
       </section>
+      <Dialog onOpenChange={setAddRootOpen} open={addRootOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Add root resource</DialogTitle>
+          </DialogHeader>
+          <Input
+            autoFocus
+            onChange={e => setAddRootName(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleAddRootConfirm()}
+            placeholder="Resource name"
+            value={addRootName}
+          />
+          <DialogFooter>
+            <Button onClick={() => setAddRootOpen(false)} variant="outline">
+              Cancel
+            </Button>
+            <Button disabled={!addRootName.trim()} onClick={handleAddRootConfirm}>
+              Add
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog onOpenChange={setAddChildOpen} open={addChildOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Add child resource</DialogTitle>
+            {addChildParentPath && (
+              <DialogDescription>
+                Under <code>{addChildParentPath}</code>
+              </DialogDescription>
+            )}
+          </DialogHeader>
+          <Input
+            autoFocus
+            onChange={e => setAddChildName(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleAddChildConfirm()}
+            placeholder="Resource name"
+            value={addChildName}
+          />
+          <DialogFooter>
+            <Button onClick={() => setAddChildOpen(false)} variant="outline">
+              Cancel
+            </Button>
+            <Button disabled={!addChildName.trim()} onClick={handleAddChildConfirm}>
+              Add
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog onOpenChange={setRenameOpen} open={renameOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Rename resource</DialogTitle>
+          </DialogHeader>
+          <Input
+            autoFocus
+            onChange={e => setRenameName(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleRenameConfirm()}
+            placeholder="Resource name"
+            value={renameName}
+          />
+          <DialogFooter>
+            <Button onClick={() => setRenameOpen(false)} variant="outline">
+              Cancel
+            </Button>
+            <Button
+              disabled={!renameName.trim() || renameName.trim() === renameNode?.name}
+              onClick={handleRenameConfirm}
+            >
+              Rename
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog onOpenChange={setDeleteOpen} open={deleteOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete resource</DialogTitle>
+            <DialogDescription>
+              Delete <code>{deleteNode?.path}</code> and remove all rights for
+              the selected role below it? This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button onClick={() => setDeleteOpen(false)} variant="outline">
+              Cancel
+            </Button>
+            <Button onClick={handleDeleteConfirm} variant="destructive">
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

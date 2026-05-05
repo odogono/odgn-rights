@@ -1,4 +1,11 @@
-import { Flags, Rights, type RightJSON, type Subject } from 'odgn-rights';
+import {
+  Flags,
+  Right,
+  Rights,
+  RoleRegistry,
+  type RightJSON,
+  type Subject
+} from 'odgn-rights';
 
 import type { PlaygroundConfig, ResourceNode } from './playground-config';
 
@@ -128,14 +135,65 @@ const toDisplayNodes = (
     path: child.path
   }));
 
+const collectResourcePaths = (
+  nodes: ResourceNode[],
+  parentSegments: string[] = []
+): string[] => {
+  const paths: string[] = [];
+
+  for (const node of nodes) {
+    const nextSegments = [...parentSegments, node.name];
+    paths.push(joinPath(nextSegments));
+
+    if (node.children?.length) {
+      paths.push(...collectResourcePaths(node.children, nextSegments));
+    }
+  }
+
+  return paths;
+};
+
+const resolveReferencedPaths = (
+  referencedPaths: string[],
+  explicitPaths: string[]
+): string[] => {
+  const resolvedPaths = new Set<string>();
+
+  for (const path of referencedPaths) {
+    const normalizedPath = normalizeResourcePath(path);
+    const hasWildcard =
+      normalizedPath.includes('*') || normalizedPath.includes('?');
+
+    if (!hasWildcard) {
+      resolvedPaths.add(normalizedPath);
+      continue;
+    }
+
+    const matcher = new Right(normalizedPath);
+    const matches = explicitPaths.filter(explicitPath =>
+      matcher.matches(explicitPath)
+    );
+
+    if (matches.length > 0) {
+      matches.forEach(match => resolvedPaths.add(match));
+      continue;
+    }
+
+    resolvedPaths.add(normalizedPath);
+  }
+
+  return [...resolvedPaths];
+};
+
 export const buildResourceDisplayTree = (
   resources: ResourceNode[],
   referencedPaths: string[]
 ): ResourceDisplayNode[] => {
   const rootChildren = new Map<string, MutableDisplayNode>();
   addExplicitResources(rootChildren, resources);
+  const explicitPaths = collectResourcePaths(resources);
 
-  for (const path of referencedPaths) {
+  for (const path of resolveReferencedPaths(referencedPaths, explicitPaths)) {
     const segments = splitResourcePath(path);
     insertNode(rootChildren, segments, true);
   }
@@ -231,6 +289,39 @@ export const getExactRoleFlagState = (
   }
 
   const detail = Rights.fromJSON(rights).explain(path, flag).details[0];
+  if (!detail) {
+    return 'clear';
+  }
+  if (detail.allowed) {
+    return 'allow';
+  }
+  return detail.right ? 'deny' : 'clear';
+};
+
+export const getEffectiveRoleFlagState = (
+  config: PlaygroundConfig,
+  roleName: string | null,
+  path: string,
+  flag: Flags
+): ExactFlagState => {
+  if (!roleName) {
+    return 'clear';
+  }
+
+  const registry = RoleRegistry.fromJSON(config.roles);
+  const role = registry.get(roleName);
+  if (!role) {
+    return 'clear';
+  }
+
+  const normalizedPath = normalizeResourcePath(path);
+  const rights = new Rights();
+
+  role.allRights().forEach(({ right }) => {
+    rights.add(right);
+  });
+
+  const detail = rights.explain(normalizedPath, flag).details[0];
   if (!detail) {
     return 'clear';
   }

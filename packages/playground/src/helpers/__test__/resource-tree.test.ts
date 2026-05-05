@@ -6,6 +6,7 @@ import {
   buildResourceDisplayTree,
   cycleRoleFlag,
   deleteResourceBranch,
+  getEffectiveRoleFlagState,
   getFlagDetails,
   getOverallAccessState,
   getReferencedPaths,
@@ -68,6 +69,80 @@ describe('resource display tree', () => {
       path: '/meta'
     });
   });
+
+  it('projects wildcard rights onto matching explicit resources', () => {
+    const config: PlaygroundConfig = {
+      resources: [
+        {
+          children: [
+            {
+              children: [
+                {
+                  children: [{ name: 'metrics' }, { name: 'settings' }],
+                  name: 'dashboard'
+                }
+              ],
+              name: 'staging'
+            }
+          ],
+          name: 'workbench'
+        }
+      ],
+      roles: [
+        {
+          name: 'workbench-guest',
+          rights: [
+            { allow: 'r', path: '/workbench/*/dashboard/metrics' },
+            { allow: 'r', path: '/workbench/*/dashboard/settings' }
+          ]
+        }
+      ],
+      subject: { roles: ['workbench-guest'] }
+    };
+    const registry = RoleRegistry.fromJSON(config.roles);
+    const subject = Subject.fromJSON(config.subject, registry);
+
+    const tree = buildResourceDisplayTree(
+      config.resources,
+      getReferencedPaths(subject)
+    );
+
+    expect(tree).toEqual([
+      {
+        children: [
+          {
+            children: [
+              {
+                children: [
+                  {
+                    children: [],
+                    inferred: false,
+                    name: 'metrics',
+                    path: '/workbench/staging/dashboard/metrics'
+                  },
+                  {
+                    children: [],
+                    inferred: false,
+                    name: 'settings',
+                    path: '/workbench/staging/dashboard/settings'
+                  }
+                ],
+                inferred: false,
+                name: 'dashboard',
+                path: '/workbench/staging/dashboard'
+              }
+            ],
+            inferred: false,
+            name: 'staging',
+            path: '/workbench/staging'
+          }
+        ],
+        inferred: false,
+        name: 'workbench',
+        path: '/workbench'
+      }
+    ]);
+  });
 });
 
 describe('resource tree edits', () => {
@@ -125,6 +200,43 @@ describe('resource tree edits', () => {
 });
 
 describe('effective access states', () => {
+  it('reports wildcard matches as effective role flag state', () => {
+    const config: PlaygroundConfig = {
+      resources: [
+        {
+          children: [
+            {
+              children: [
+                {
+                  children: [{ name: 'metrics' }],
+                  name: 'dashboard'
+                }
+              ],
+              name: 'staging'
+            }
+          ],
+          name: 'workbench'
+        }
+      ],
+      roles: [
+        {
+          name: 'workbench-guest',
+          rights: [{ allow: 'r', path: '/workbench/*/dashboard/metrics' }]
+        }
+      ],
+      subject: { roles: ['workbench-guest'] }
+    };
+
+    expect(
+      getEffectiveRoleFlagState(
+        config,
+        'workbench-guest',
+        '/workbench/staging/dashboard/metrics',
+        Flags.READ
+      )
+    ).toBe('allow');
+  });
+
   it('distinguishes explicit deny from implicit block', () => {
     const config: PlaygroundConfig = {
       resources: [{ children: [{ name: 'secret' }], name: 'company' }],
