@@ -11,6 +11,13 @@ import {
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -574,42 +581,41 @@ const ResourceTreeNode = ({
         </div>
 
         <div className="resource-node-actions">
-          <Button
-            disabled={structuralDisabled}
-            onClick={event => {
-              event.stopPropagation();
-              onAddChild(node.path);
-            }}
-            size="icon-xs"
-            title="Add child"
-            variant="ghost"
-          >
-            +
-          </Button>
-          <Button
-            disabled={disabled}
-            onClick={event => {
-              event.stopPropagation();
-              onRename(node);
-            }}
-            size="xs"
-            title="Rename"
-            variant="ghost"
-          >
-            Rename
-          </Button>
-          <Button
-            disabled={disabled}
-            onClick={event => {
-              event.stopPropagation();
-              onDelete(node);
-            }}
-            size="xs"
-            title="Delete"
-            variant="ghost"
-          >
-            Delete
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                disabled={structuralDisabled && disabled}
+                onClick={event => event.stopPropagation()}
+                size="icon-xs"
+                title="Node actions"
+                variant="ghost"
+              >
+                ⋯
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                disabled={structuralDisabled}
+                onSelect={() => onAddChild(node.path)}
+              >
+                Add child
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                disabled={disabled}
+                onSelect={() => onRename(node)}
+              >
+                Rename
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive"
+                disabled={disabled}
+                onSelect={() => onDelete(node)}
+              >
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
