@@ -1,6 +1,7 @@
 import { useSetAtom } from 'jotai';
 import { useState } from 'react';
 
+import { Button } from '@/components/ui/button';
 import { getFlagName, getFlagSummary } from '@playground/helpers/flags';
 import { testFlagsAtom, testPathAtom } from '@playground/store/atoms';
 import type { TestCase, TestResult } from '@playground/types/test-suite';
@@ -23,132 +24,75 @@ export const TestResultRow = ({
   return (
     <div
       className={`test-result-row ${result ? (result.passed ? 'passed' : 'failed') : ''}`}
-      style={{
-        backgroundColor: result
-          ? result.passed
-            ? 'rgba(0,255,0,0.02)'
-            : 'rgba(255,0,0,0.02)'
-          : 'white',
-        border: '1px solid #eee',
-        borderRadius: '4px',
-        marginBottom: '4px',
-        overflow: 'hidden'
-      }}
     >
       <div
         className="test-header"
         onClick={() => setExpanded(!expanded)}
-        style={{
-          alignItems: 'center',
-          cursor: 'pointer',
-          display: 'flex',
-          fontSize: '0.85rem',
-          padding: '8px'
-        }}
       >
         <span style={{ fontWeight: 'bold', width: '20px' }}>
           {result ? (result.passed ? '✓' : '✗') : '•'}
         </span>
         <span
-          style={{
-            flex: 1,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap'
-          }}
+          className="flex-1 truncate"
           title={testCase.path}
         >
           {testCase.path}
         </span>
-        <span
-          style={{
-            fontFamily: 'monospace',
-            fontSize: '0.75rem',
-            margin: '0 8px',
-            opacity: 0.5
-          }}
-        >
+        <span className="font-mono text-xs opacity-40 mx-2">
           {getFlagSummary(testCase.flags)}
         </span>
-        <span style={{ fontSize: '0.75rem', marginRight: '8px', opacity: 0.5 }}>
+        <span className="text-xs opacity-40 mr-2">
           {testCase.expected ? 'allow' : 'deny'}
         </span>
         {result && (
-          <span style={{ fontSize: '0.75rem', opacity: 0.5, width: '50px' }}>
+          <span className="text-xs opacity-40 w-12">
             {result.duration.toFixed(1)}ms
           </span>
         )}
         <div
+          className="flex gap-1"
           onClick={e => e.stopPropagation()}
-          style={{ display: 'flex', gap: '4px' }}
         >
-          <button
+          <Button
             onClick={() => {
               setPath(testCase.path);
               setFlags(testCase.flags);
             }}
-            style={{ fontSize: '0.7rem', padding: '2px 4px' }}
+            size="icon-xs"
             title="Load into tester"
+            variant="ghost"
           >
-            Load
-          </button>
-          <button
-            onClick={onEdit}
-            style={{ fontSize: '0.7rem', padding: '2px 4px' }}
-          >
-            Edit
-          </button>
-          <button
-            onClick={onDelete}
-            style={{ fontSize: '0.7rem', padding: '2px 4px' }}
-          >
-            Del
-          </button>
+            ↗
+          </Button>
+          <Button onClick={onEdit} size="icon-xs" variant="ghost">
+            ✎
+          </Button>
+          <Button onClick={onDelete} size="icon-xs" variant="ghost">
+            ✕
+          </Button>
         </div>
       </div>
 
       {expanded && (
-        <div
-          className="test-details"
-          style={{
-            backgroundColor: 'rgba(0,0,0,0.01)',
-            borderTop: '1px solid #eee',
-            fontSize: '0.85rem',
-            padding: '8px'
-          }}
-        >
+        <div className="test-details">
           {testCase.description && (
-            <p
-              style={{ fontStyle: 'italic', margin: '0 0 8px 0', opacity: 0.8 }}
-            >
-              {testCase.description}
-            </p>
+            <p className="italic opacity-70 text-xs mb-2">{testCase.description}</p>
           )}
 
           {result ? (
             <div className="explanation">
-              <h4 style={{ fontSize: '0.8rem', margin: '0 0 4px 0' }}>
-                Explanation:
-              </h4>
+              <h4 className="text-xs font-semibold mb-1">Explanation:</h4>
               {result.explanation.details.map((detail, i) => (
                 <div
                   className="detail-row"
                   key={i}
-                  style={{
-                    display: 'flex',
-                    fontSize: '0.75rem',
-                    gap: '8px',
-                    marginBottom: '2px'
-                  }}
                 >
-                  <span style={{ opacity: 0.6, width: '50px' }}>
-                    {getFlagName(detail.bit)}
-                  </span>
-                  <span style={{ color: detail.allowed ? 'green' : 'red' }}>
+                  <span className="opacity-50 w-12 text-xs">{getFlagName(detail.bit)}</span>
+                  <span className={detail.allowed ? 'success' : 'error'}>
                     {detail.allowed ? '✓' : '✗'}
                   </span>
                   {detail.right && (
-                    <span className="matched-rule" style={{ opacity: 0.8 }}>
+                    <span className="matched-rule text-xs opacity-70">
                       {detail.right.allow ? `+${detail.right.allow}` : ''}
                       {detail.right.deny ? `-${detail.right.deny}` : ''}:
                       {detail.right.path}
@@ -160,7 +104,7 @@ export const TestResultRow = ({
               ))}
             </div>
           ) : (
-            <div style={{ opacity: 0.5 }}>Run tests to see results.</div>
+            <div className="opacity-40 text-xs">Run tests to see results.</div>
           )}
         </div>
       )}

@@ -4,7 +4,8 @@
     "baseUrl": ".",
     "paths": {
       "odgn-rights": ["../odgn-rights/src/index.ts"],
-      "@playground/*": ["./src/*"]
+      "@playground/*": ["./src/*"],
+      "@/*": ["./src/*"]
     }
   },
   "include": ["src/**/*", "e2e/**/*", "build.ts"]

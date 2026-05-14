@@ -5,29 +5,32 @@ import {
   Rights,
   RoleRegistry,
   Subject,
-  type Right,
-  type RoleJSON,
-  type SubjectJSON
+  type Right
 } from 'odgn-rights';
+
+import {
+  DEFAULT_PLAYGROUND_CONFIG,
+  parsePlaygroundConfig,
+  type PlaygroundConfig
+} from '../helpers/playground-config';
 
 // ============================================
 // Primitive Atoms (source of truth)
 // ============================================
 
-export type PlaygroundConfig = {
-  roles: RoleJSON[];
-  subject: SubjectJSON;
-};
+export const configAtom = atom<PlaygroundConfig>(DEFAULT_PLAYGROUND_CONFIG);
 
-export const configAtom = atom<PlaygroundConfig>({
-  roles: [],
-  subject: { rights: [], roles: [] }
-});
-
-export const editorContentAtom = atom<string>('');
+export const editorContentAtom = atom<string>(
+  JSON.stringify(DEFAULT_PLAYGROUND_CONFIG, null, 2)
+);
 export const editorFormatAtom = atomWithStorage<'json' | 'string'>(
   'playground-format',
   'json'
+);
+
+export const screenModeAtom = atomWithStorage<'classic' | 'resources'>(
+  'playground-screen-mode',
+  'classic'
 );
 
 export const testPathAtom = atom<string>('');
@@ -48,6 +51,7 @@ export const testHistoryAtom = atom<TestHistoryEntry[]>([]);
 export const selectedNodeAtom = atom<string | null>(null);
 
 export const showDocAtom = atom<boolean>(false);
+const selectedResourceRoleStateAtom = atom<string | null>(null);
 
 export type ExplainResult = {
   allowed: boolean;
@@ -82,7 +86,7 @@ export const validationErrorAtom = atom<string | null>(get => {
   }
   try {
     if (format === 'json') {
-      JSON.parse(content);
+      parsePlaygroundConfig(content);
     } else {
       Rights.parse(content);
     }
@@ -91,6 +95,30 @@ export const validationErrorAtom = atom<string | null>(get => {
     return (error as Error).message;
   }
 });
+
+export const editableResourceRolesAtom = atom(get => {
+  const config = get(configAtom);
+  const definedRoles = new Set(config.roles.map(role => role.name));
+  return (config.subject.roles ?? []).filter(
+    (roleName): roleName is string => definedRoles.has(roleName)
+  );
+});
+
+export const selectedResourceRoleAtom = atom(
+  get => {
+    const explicitSelection = get(selectedResourceRoleStateAtom);
+    const availableRoles = get(editableResourceRolesAtom);
+
+    if (explicitSelection && availableRoles.includes(explicitSelection)) {
+      return explicitSelection;
+    }
+
+    return availableRoles[0] ?? null;
+  },
+  (_get, set, roleName: string | null) => {
+    set(selectedResourceRoleStateAtom, roleName);
+  }
+);
 
 // Atom that computes explain() result for current test
 export const testResultAtom = atom(get => {

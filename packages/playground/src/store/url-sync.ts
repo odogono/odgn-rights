@@ -2,15 +2,20 @@ import { atom, useAtomValue, useSetAtom } from 'jotai';
 import { useEffect } from 'react';
 
 import {
+  normalizePlaygroundConfig,
+  type PlaygroundConfig
+} from '../helpers/playground-config';
+import {
   configAtom,
   editorFormatAtom,
-  simulatedTimeAtom,
-  type PlaygroundConfig
+  screenModeAtom,
+  simulatedTimeAtom
 } from './atoms';
 
 type URLState = {
   config: PlaygroundConfig;
   format: 'json' | 'string';
+  screenMode?: 'classic' | 'resources';
   simulatedTime?: string;
 };
 
@@ -36,18 +41,21 @@ export const urlStateAtom = atom(
   get => {
     const config = get(configAtom);
     const format = get(editorFormatAtom);
+    const screenMode = get(screenModeAtom);
     const simulatedTime = get(simulatedTimeAtom);
     return {
-      config,
+      config: normalizePlaygroundConfig(config),
       format,
+      screenMode,
       simulatedTime: simulatedTime?.toISOString()
     };
   },
   (_get, set, hash: string) => {
     const state = decodeState(hash);
     if (state) {
-      set(configAtom, state.config);
+      set(configAtom, normalizePlaygroundConfig(state.config));
       set(editorFormatAtom, state.format);
+      set(screenModeAtom, state.screenMode ?? 'classic');
       if (state.simulatedTime) {
         set(simulatedTimeAtom, new Date(state.simulatedTime));
       } else {

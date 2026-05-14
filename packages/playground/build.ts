@@ -1,9 +1,12 @@
 /* eslint-disable no-console */
+const outdir = './.playground-build';
+
 const result = await Bun.build({
-  entrypoints: ['./src/main.tsx'],
-  external: [],
+  entrypoints: ['./index.html'],
+  outdir,
   minify: true,
   sourcemap: 'none',
+  splitting: false,
   target: 'browser'
 });
 
@@ -12,24 +15,32 @@ if (!result.success) {
   process.exit(1);
 }
 
-const js = await result.outputs[0]?.text();
-if (js === undefined) {
-  throw new Error('No output from build');
+const htmlOutput = result.outputs.find((output) => output.path.endsWith('.html'));
+if (!htmlOutput) {
+  throw new Error('No HTML output from build');
 }
-const css = await Bun.file('./src/styles.css').text();
-const htmlTemplate = await Bun.file('./index.html').text();
 
-// Inline JS and CSS into a single HTML file
-const html = htmlTemplate
-  .replace(
-    '<link rel="stylesheet" href="./src/styles.css" />',
-    `<style>${css}</style>`
-  )
-  .replace(
-    '<script type="module" src="./src/main.tsx"></script>',
-    `<script type="module">${js}</script>`
+const cssOutput = result.outputs.find((output) => output.path.endsWith('.css'));
+const jsOutput = result.outputs.find((output) => output.path.endsWith('.js'));
+
+let html = await htmlOutput.text();
+
+if (cssOutput) {
+  html = html.replace(
+    /<link[^>]+rel="stylesheet"[^>]+href="[^"]+\.css"[^>]*>/,
+    `<style>${await cssOutput.text()}</style>`
   );
+}
 
-// Output to root dist folder
+if (!jsOutput) {
+  throw new Error('No JavaScript output from build');
+}
+
+html = html.replace(
+  /<script[^>]+src="[^"]+\.js"[^>]*><\/script>/,
+  `<script type="module">${await jsOutput.text()}</script>`
+);
+
 await Bun.write('../../dist/playground.html', html);
+await Bun.$`rm -rf ${outdir}`;
 console.log('Built: dist/playground.html');

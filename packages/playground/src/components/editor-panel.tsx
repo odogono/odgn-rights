@@ -3,11 +3,22 @@ import { useAtom, useAtomValue } from 'jotai';
 import { Rights } from 'odgn-rights';
 import { useEffect, useRef } from 'react';
 
+import { Button } from '@/components/ui/button';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '@/components/ui/select';
+import {
+  parsePlaygroundConfig,
+  serializePlaygroundConfig
+} from '../helpers/playground-config';
 import {
   editorContentAtom,
   editorFormatAtom,
   validationErrorAtom,
-  type PlaygroundConfig
 } from '../store/atoms';
 import { configWithHistoryAtom } from '../store/history';
 
@@ -30,10 +41,9 @@ export const EditorPanel = () => {
     handleScroll();
   }, [content]);
 
-  // Sync editor content when config changes (e.g. from preset or undo/redo)
   useEffect(() => {
     if (format === 'json') {
-      const newContent = JSON.stringify(config, null, 2);
+      const newContent = serializePlaygroundConfig(config);
       if (newContent !== content) {
         setContent(newContent);
       }
@@ -45,12 +55,13 @@ export const EditorPanel = () => {
       return;
     }
     try {
-      let parsed: PlaygroundConfig;
+      let parsed;
       if (format === 'json') {
-        parsed = JSON.parse(content);
+        parsed = parsePlaygroundConfig(content);
       } else {
         const rights = Rights.parse(content);
         parsed = {
+          resources: [],
           roles: [],
           subject: { rights: rights.toJSON() }
         };
@@ -66,17 +77,21 @@ export const EditorPanel = () => {
       <header className="panel-header">
         <h2>Editor</h2>
         <div style={{ alignItems: 'center', display: 'flex', gap: '8px' }}>
-          <label htmlFor="editor-format" style={{ fontSize: '0.8rem' }}>
+          <label htmlFor="editor-format" style={{ fontSize: '0.8rem', opacity: 0.7 }}>
             Format:
           </label>
-          <select
-            id="editor-format"
-            onChange={e => setFormat(e.target.value as 'json' | 'string')}
+          <Select
+            onValueChange={v => setFormat(v as 'json' | 'string')}
             value={format}
           >
-            <option value="json">JSON</option>
-            <option value="string">Rights String</option>
-          </select>
+            <SelectTrigger className="h-7 text-xs w-[130px]" id="editor-format">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="json">JSON</SelectItem>
+              <SelectItem value="string">Rights String</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </header>
 
@@ -94,7 +109,7 @@ export const EditorPanel = () => {
           onScroll={handleScroll}
           placeholder={
             format === 'json'
-              ? 'Enter JSON config...'
+              ? 'Enter JSON config with roles, subject, and resources...'
               : 'Enter rights (e.g. +r:/public/**)'
           }
           ref={textareaRef}
@@ -107,14 +122,14 @@ export const EditorPanel = () => {
       <footer className="panel-footer">
         <div aria-live="polite">
           {error ? (
-            <span className="error">{error}</span>
+            <span className="error" style={{ fontSize: '0.85rem' }}>{error}</span>
           ) : (
-            <span className="success">Valid configuration</span>
+            <span className="success" style={{ fontSize: '0.85rem' }}>Valid configuration</span>
           )}
         </div>
-        <button disabled={!!error || !content} onClick={handleApply}>
+        <Button disabled={!!error || !content} onClick={handleApply} size="sm">
           Apply Changes
-        </button>
+        </Button>
       </footer>
     </section>
   );
