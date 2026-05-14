@@ -11,7 +11,7 @@
   "author": "Alex Veenendaal",
   "repository": {
     "type": "git",
-    "url": "https://tangled.sh:alex.veenenda.al/odgn-rights"
+    "url": "https://tangled.sh/alex.veenenda.al/odgn-rights"
   },
   "license": "MIT",
   "main": "dist/index.js",
