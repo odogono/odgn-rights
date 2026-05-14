@@ -113,6 +113,93 @@ export const PRESETS: Record<string, Preset> = {
     description: 'Path specificity nested deep with direct subject overrides',
     name: 'Fine-Grained Resources'
   },
+  'resource-tree-authoring': {
+    config: {
+      resources: [
+        {
+          children: [
+            {
+              children: [
+                {
+                  children: [{ name: 'metrics' }, { name: 'settings' }],
+                  name: 'dashboard'
+                },
+                {
+                  children: [{ name: 'users' }],
+                  name: 'admin'
+                }
+              ],
+              name: 'staging'
+            }
+          ],
+          name: 'workbench'
+        },
+        {
+          "children": [
+            {
+              "children": [
+                {
+                  "name": "alarms"
+                },
+                {
+                  "name": "api-tokens"
+                },
+                {
+                  "name": "audit-log"
+                },
+                {
+                  "name": "certificates"
+                },
+                {
+                  "name": "controller-defs"
+                },
+                {
+                  "name": "controllers"
+                },
+                {
+                  "name": "environments"
+                },
+                {
+                  "name": "instances"
+                },
+                {
+                  "name": "organisations"
+                },
+                {
+                  "name": "oauth"
+                },
+                {
+                  "name": "permissions"
+                },
+                {
+                  "name": "routers"
+                },
+                {
+                  "name": "sites"
+                }
+              ],
+              "name": "prod"
+            }
+          ],
+          "name": "meta"
+        }
+      ],
+      roles: [
+        {
+          name: 'workbench-guest',
+          rights: [{ allow: 'r', path: '/workbench/staging/dashboard/metrics' }]
+        },
+        {
+          name: 'meta-auditor',
+          rights: [{ allow: 'r', path: '/meta/prod/users' }]
+        }
+      ],
+      subject: { roles: ['workbench-guest', 'meta-auditor'] }
+    },
+    description:
+      'Resource tree editing with explicit resources and inferred rights-only branches',
+    name: 'Resource Tree Authoring'
+  },
   'tagged-rights': {
     config: {
       resources: [],
@@ -155,43 +242,5 @@ export const PRESETS: Record<string, Preset> = {
     },
     description: 'Rights with validity windows',
     name: 'Time-Based Rights'
-  },
-  'resource-tree-authoring': {
-    config: {
-      resources: [
-        {
-          children: [
-            {
-              children: [
-                {
-                  children: [{ name: 'metrics' }, { name: 'settings' }],
-                  name: 'dashboard'
-                },
-                {
-                  children: [{ name: 'users' }],
-                  name: 'admin'
-                }
-              ],
-              name: 'staging'
-            }
-          ],
-          name: 'workbench'
-        }
-      ],
-      roles: [
-        {
-          name: 'workbench-guest',
-          rights: [{ allow: 'r', path: '/workbench/staging/dashboard/metrics' }]
-        },
-        {
-          name: 'meta-auditor',
-          rights: [{ allow: 'r', path: '/meta/prod/users' }]
-        }
-      ],
-      subject: { roles: ['workbench-guest', 'meta-auditor'] }
-    },
-    description:
-      'Resource tree editing with explicit resources and inferred rights-only branches',
-    name: 'Resource Tree Authoring'
   }
 };
