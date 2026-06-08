@@ -222,6 +222,62 @@ describe('RedisAdapter', () => {
       expect(loaded!.rights.has('/profile', Flags.READ)).toBe(true);
     });
 
+    test('loaded roles and subjects preserve inherited role access', async () => {
+      const { RoleRegistry, Subject } = await import('../../index');
+
+      const registry = new RoleRegistry();
+      const parent = registry.define('parent');
+      parent.rights.allow('/meta', Flags.ALL);
+
+      const middle = registry.define('middle');
+      middle.rights.allow('/middle', Flags.READ);
+      middle.inheritsFrom(parent);
+
+      const child = registry.define('child');
+      child.inheritsFrom(middle);
+
+      await adapter.saveRegistry(registry);
+
+      const loadedChild = await adapter.loadRole('child');
+      expect(loadedChild).not.toBeNull();
+      expect(loadedChild!.parents.map(role => role.name)).toEqual(['middle']);
+
+      const roleSubject = new Subject().memberOf(loadedChild!);
+      expect(roleSubject.read('/meta/prod/controller-defs')).toBe(true);
+
+      const subject = new Subject();
+      subject.memberOf(child);
+      await adapter.saveSubject('runtime-token', subject);
+
+      const loadedSubject = await adapter.loadSubject('runtime-token');
+      expect(loadedSubject).not.toBeNull();
+      expect(loadedSubject!.toJSON().roles).toEqual(['child']);
+      expect(loadedSubject!.read('/meta/prod/controller-defs')).toBe(true);
+
+      const loadedSubjects = await adapter.loadSubjects();
+      expect(
+        loadedSubjects
+          .find(entry => entry.identifier === 'runtime-token')
+          ?.subject.read('/meta/prod/controller-defs')
+      ).toBe(true);
+
+      const paginatedSubjects = await adapter.loadSubjectsPaginated({
+        page: 1,
+        pageSize: 10
+      });
+      expect(
+        paginatedSubjects.items
+          .find(entry => entry.identifier === 'runtime-token')
+          ?.subject.read('/meta/prod/controller-defs')
+      ).toBe(true);
+
+      const matchingSubjects = await adapter.findSubjectsWithAccess(
+        '/meta/prod/controller-defs',
+        Flags.READ
+      );
+      expect(matchingSubjects).toContain('runtime-token');
+    });
+
     test('deleteSubject removes from database', async () => {
       const { Subject } = await import('../../index');
       const subject = new Subject();

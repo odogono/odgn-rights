@@ -28,8 +28,15 @@ export class RoleRegistry {
     return this.roles.get(name);
   }
 
+  /**
+   * Return all registered roles in definition order.
+   */
+  getAll(): Role[] {
+    return Array.from(this.roles.values());
+  }
+
   toJSON(): RoleJSON[] {
-    return Array.from(this.roles.values()).map(r => r.toJSON());
+    return this.getAll().map(r => r.toJSON());
   }
 
   /**

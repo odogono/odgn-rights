@@ -1,6 +1,6 @@
 {
   "name": "odgn-rights",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "description": "TypeScript library for expressing and evaluating hierarchical rights with simple glob patterns.",
   "keywords": [
     "rights",

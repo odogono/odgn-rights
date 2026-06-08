@@ -163,15 +163,46 @@ export abstract class BaseAdapter implements DatabaseAdapter {
   abstract deleteRight(id: number): Promise<boolean>;
 
   abstract saveRole(role: Role): Promise<number>;
-  abstract loadRole(name: string): Promise<Role | null>;
   abstract loadRoles(): Promise<Role[]>;
   abstract deleteRole(name: string): Promise<boolean>;
 
   abstract saveRegistry(registry: RoleRegistry): Promise<void>;
   abstract loadRegistry(): Promise<RoleRegistry>;
 
+  /**
+   * Load a single role with its full inheritance chain resolved.
+   * Routes through loadRegistry() so inherited rights are included.
+   * Pass a pre-built registry to avoid reloading it on repeated calls.
+   */
+  async loadRole(name: string, registry?: RoleRegistry): Promise<Role | null> {
+    const reg = registry ?? (await this.loadRegistry());
+    return reg.get(name) ?? null;
+  }
+
+  /**
+   * Attach the named roles to a subject, resolving each through the registry so
+   * inherited rights are included. Roles missing from the registry are skipped.
+   * Shared by every subject-hydration path so the inheritance-aware lookup lives
+   * in one place.
+   */
+  protected applyRolesToSubject(
+    subject: Subject,
+    roleNames: Iterable<string>,
+    registry: RoleRegistry
+  ): void {
+    for (const roleName of roleNames) {
+      const role = registry.get(roleName);
+      if (role) {
+        subject.memberOf(role);
+      }
+    }
+  }
+
   abstract saveSubject(identifier: string, subject: Subject): Promise<number>;
-  abstract loadSubject(identifier: string): Promise<Subject | null>;
+  abstract loadSubject(
+    identifier: string,
+    registry?: RoleRegistry
+  ): Promise<Subject | null>;
   abstract deleteSubject(identifier: string): Promise<boolean>;
 
   /**
@@ -191,15 +222,9 @@ export abstract class BaseAdapter implements DatabaseAdapter {
   ): Promise<PaginatedResult<SubjectWithIdentifier>>;
 
   /**
-   * Get all subject identifiers from the database.
-   * Used by findSubjectsWithAccess and can be overridden for optimization.
-   */
-  protected abstract getAllSubjectIdentifiers(): Promise<string[]>;
-
-  /**
    * Find all subject identifiers that have access to a specific path with given flags.
-   * Default implementation uses getAllSubjectIdentifiers + loadSubject.
-   * Subclasses can override with optimized batch loading implementations.
+   * Uses the batch-loading loadSubjects() path so subjects are fully hydrated
+   * (including inherited role rights) before the access check.
    * @param pathPattern The path pattern to check (supports wildcards)
    * @param flags The flags to check for
    * @returns Array of subject identifiers that have access
@@ -208,17 +233,10 @@ export abstract class BaseAdapter implements DatabaseAdapter {
     pathPattern: string,
     flags: Flags
   ): Promise<string[]> {
-    const allIdentifiers = await this.getAllSubjectIdentifiers();
-    const matchingSubjects: string[] = [];
-
-    for (const identifier of allIdentifiers) {
-      const subject = await this.loadSubject(identifier);
-      if (subject?.has(pathPattern, flags)) {
-        matchingSubjects.push(identifier);
-      }
-    }
-
-    return matchingSubjects;
+    const subjects = await this.loadSubjects();
+    return subjects
+      .filter(({ subject }) => subject.has(pathPattern, flags))
+      .map(({ identifier }) => identifier);
   }
 
   abstract clear(): Promise<void>;

@@ -132,17 +132,18 @@ export class SubjectRegistry {
   }
 
   /**
-   * Load all subjects from a database adapter.
-   * Note: This requires the adapter to support getAllSubjectIdentifiers().
-   * For adapters that don't support this, use loadFromIdentifiers() instead.
+   * Load the given subjects from a database adapter.
+   * The role registry is loaded once and reused across every subject so that
+   * loading N subjects does not re-hydrate the registry N times.
    */
   static async loadFrom(
     adapter: DatabaseAdapter,
     identifiers: string[]
   ): Promise<SubjectRegistry> {
     const registry = new SubjectRegistry();
+    const roleRegistry = await adapter.loadRegistry();
     for (const id of identifiers) {
-      const subject = await adapter.loadSubject(id);
+      const subject = await adapter.loadSubject(id, roleRegistry);
       if (subject) {
         registry.register(id, subject);
       }

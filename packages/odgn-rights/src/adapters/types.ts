@@ -197,9 +197,10 @@ export type DatabaseAdapter = {
   loadRightsByPath(pathPattern: string): Promise<Rights>;
 
   /**
-   * Load a role by name
+   * Load a role by name. An optional pre-built registry can be supplied to
+   * avoid reloading it on repeated calls.
    */
-  loadRole(name: string): Promise<Role | null>;
+  loadRole(name: string, registry?: RoleRegistry): Promise<Role | null>;
 
   /**
    * Load all roles from the database
@@ -211,9 +212,14 @@ export type DatabaseAdapter = {
   // -------------------------------------------------------------------------
 
   /**
-   * Load a subject by its external identifier
+   * Load a subject by its external identifier. An optional pre-built registry
+   * can be supplied to avoid reloading it on repeated calls (e.g. when loading
+   * many subjects in a loop).
    */
-  loadSubject(identifier: string): Promise<Subject | null>;
+  loadSubject(
+    identifier: string,
+    registry?: RoleRegistry
+  ): Promise<Subject | null>;
 
   /**
    * Load all subjects with their identifiers using optimized batch loading.

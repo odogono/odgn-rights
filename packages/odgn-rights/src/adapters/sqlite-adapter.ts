@@ -1,6 +1,5 @@
 import { Database, type Statement } from 'bun:sqlite';
 
-import { Flags } from '../constants';
 import { Right } from '../right';
 import { Rights } from '../rights';
 import { Role } from '../role';
@@ -279,7 +278,7 @@ export class SQLiteAdapter extends BaseAdapter {
     });
   }
 
-  async loadRole(name: string): Promise<Role | null> {
+  private async loadRoleDirect(name: string): Promise<Role | null> {
     if (!this.db || !this.stmtSelectRoleByName) {
       throw new Error('Not connected');
     }
@@ -309,21 +308,8 @@ export class SQLiteAdapter extends BaseAdapter {
   }
 
   async loadRoles(): Promise<Role[]> {
-    if (!this.db || !this.stmtSelectAllRoles) {
-      throw new Error('Not connected');
-    }
-
-    const roleRows = this.stmtSelectAllRoles.all() as RoleRow[];
-    const roles: Role[] = [];
-
-    for (const roleRow of roleRows) {
-      const role = await this.loadRole(roleRow.name);
-      if (role) {
-        roles.push(role);
-      }
-    }
-
-    return roles;
+    const registry = await this.loadRegistry();
+    return registry.getAll();
   }
 
   async deleteRole(name: string): Promise<boolean> {
@@ -378,18 +364,22 @@ export class SQLiteAdapter extends BaseAdapter {
 
   async loadRegistry(): Promise<RoleRegistry> {
     const registry = new RoleRegistry();
-    const roles = await this.loadRoles();
+    if (!this.db || !this.stmtSelectAllRoles) {
+      throw new Error('Not connected');
+    }
+
+    const roles = this.stmtSelectAllRoles.all() as RoleRow[];
     const roleMap = new Map<string, { id: number; role: Role }>();
 
-    for (const role of roles) {
-      const registryRole = registry.define(role.name, role.rights);
-      const roleRow = this.stmtSelectRoleByName?.get({
-        $name: role.name
-      }) as { id: number } | null;
-      if (roleRow) {
-        roleMap.set(role.name, { id: roleRow.id, role: registryRole });
-        this.roleIdCache.set(role.name, roleRow.id);
+    for (const roleRow of roles) {
+      const role = await this.loadRoleDirect(roleRow.name);
+      if (!role) {
+        continue;
       }
+
+      const registryRole = registry.define(role.name, role.rights);
+      roleMap.set(role.name, { id: roleRow.id, role: registryRole });
+      this.roleIdCache.set(role.name, roleRow.id);
     }
 
     const { roleInheritance } = this.tables;
@@ -476,7 +466,10 @@ export class SQLiteAdapter extends BaseAdapter {
     });
   }
 
-  async loadSubject(identifier: string): Promise<Subject | null> {
+  async loadSubject(
+    identifier: string,
+    registry?: RoleRegistry
+  ): Promise<Subject | null> {
     if (!this.db || !this.stmtSelectSubjectByIdentifier) {
       throw new Error('Not connected');
     }
@@ -490,24 +483,24 @@ export class SQLiteAdapter extends BaseAdapter {
     }
 
     const subject = new Subject();
+    const reg = registry ?? (await this.loadRegistry());
 
     const roleRows = this.stmtSelectSubjectRoles?.all({
       $subject_id: subjectRow.id
     }) as SubjectRoleRow[];
 
     if (roleRows) {
+      const roleNames: string[] = [];
       for (const sr of roleRows) {
         const roleName = this.db!.prepare(
           `SELECT name FROM ${this.tables.roles} WHERE id = $id`
         ).get({ $id: sr.role_id }) as { name: string } | null;
 
         if (roleName) {
-          const role = await this.loadRole(roleName.name);
-          if (role) {
-            subject.memberOf(role);
-          }
+          roleNames.push(roleName.name);
         }
       }
+      this.applyRolesToSubject(subject, roleNames, reg);
     }
 
     const rightRows = this.stmtSelectSubjectRights?.all({
@@ -536,15 +529,14 @@ export class SQLiteAdapter extends BaseAdapter {
   }
 
   /**
-   * Load all subjects with their identifiers using optimized batch loading.
-   * Uses JOINs to load all data in a constant number of queries (4 queries total).
+   * Load all subjects with their identifiers, direct rights, and hydrated roles.
    */
   async loadSubjects(): Promise<SubjectWithIdentifier[]> {
     if (!this.db) {
       throw new Error('Not connected');
     }
 
-    const { rights, roleRights, roles, subjectRights, subjectRoles, subjects } =
+    const { rights, roles, subjectRights, subjectRoles, subjects } =
       this.tables;
 
     // Query 1: Load all subjects
@@ -574,24 +566,7 @@ export class SQLiteAdapter extends BaseAdapter {
       )
       .all() as Array<{ subject_id: number } & RightsRow>;
 
-    // Query 4: Batch load all role rights
-    const roleRightRows = this.db
-      .prepare(
-        `SELECT r.name as role_name, rt.*
-         FROM ${roleRights} rr
-         JOIN ${roles} r ON rr.role_id = r.id
-         JOIN ${rights} rt ON rr.right_id = rt.id`
-      )
-      .all() as Array<{ role_name: string } & RightsRow>;
-
-    // Build role -> rights mapping
-    const roleRightsMap = new Map<string, Rights>();
-    for (const row of roleRightRows) {
-      if (!roleRightsMap.has(row.role_name)) {
-        roleRightsMap.set(row.role_name, new Rights());
-      }
-      roleRightsMap.get(row.role_name)!.add(this.rowToRight(row));
-    }
+    const registry = await this.loadRegistry();
 
     // Build subject -> roles mapping
     const subjectRolesMap = new Map<number, string[]>();
@@ -617,13 +592,12 @@ export class SQLiteAdapter extends BaseAdapter {
     for (const row of subjectRows) {
       const subject = new Subject();
 
-      // Add roles with their rights
-      const roleNames = subjectRolesMap.get(row.id) ?? [];
-      for (const roleName of roleNames) {
-        const roleRights = roleRightsMap.get(roleName) ?? new Rights();
-        const role = new Role(roleName, roleRights);
-        subject.memberOf(role);
-      }
+      // Add roles with their (inherited) rights
+      this.applyRolesToSubject(
+        subject,
+        subjectRolesMap.get(row.id) ?? [],
+        registry
+      );
 
       // Add direct rights
       const directRights = subjectDirectRightsMap.get(row.id);
@@ -640,8 +614,7 @@ export class SQLiteAdapter extends BaseAdapter {
   }
 
   /**
-   * Load subjects with pagination using optimized batch loading.
-   * Uses JOINs to load all data in a constant number of queries (5 queries total).
+   * Load subjects with pagination, direct rights, and hydrated roles.
    */
   async loadSubjectsPaginated(
     options: PaginationOptions
@@ -653,7 +626,7 @@ export class SQLiteAdapter extends BaseAdapter {
     const { page, pageSize } = options;
     const offset = (page - 1) * pageSize;
 
-    const { rights, roleRights, roles, subjectRights, subjectRoles, subjects } =
+    const { rights, roles, subjectRights, subjectRoles, subjects } =
       this.tables;
 
     // Query 1: Get total count
@@ -704,36 +677,7 @@ export class SQLiteAdapter extends BaseAdapter {
       )
       .all(...subjectIds) as Array<{ subject_id: number } & RightsRow>;
 
-    // Get unique role names to fetch only relevant role rights
-    const roleNamesSet = new Set<string>();
-    for (const row of subjectRoleRows) {
-      roleNamesSet.add(row.role_name);
-    }
-    const roleNames = Array.from(roleNamesSet);
-
-    // Query 5: Batch load role rights for only the roles used by these subjects
-    let roleRightRows: Array<{ role_name: string } & RightsRow> = [];
-    if (roleNames.length > 0) {
-      const roleNamesPlaceholders = roleNames.map(() => '?').join(',');
-      roleRightRows = this.db
-        .prepare(
-          `SELECT r.name as role_name, rt.*
-           FROM ${roleRights} rr
-           JOIN ${roles} r ON rr.role_id = r.id
-           JOIN ${rights} rt ON rr.right_id = rt.id
-           WHERE r.name IN (${roleNamesPlaceholders})`
-        )
-        .all(...roleNames) as Array<{ role_name: string } & RightsRow>;
-    }
-
-    // Build role -> rights mapping
-    const roleRightsMap = new Map<string, Rights>();
-    for (const row of roleRightRows) {
-      if (!roleRightsMap.has(row.role_name)) {
-        roleRightsMap.set(row.role_name, new Rights());
-      }
-      roleRightsMap.get(row.role_name)!.add(this.rowToRight(row));
-    }
+    const registry = await this.loadRegistry();
 
     // Build subject -> roles mapping
     const subjectRolesMap = new Map<number, string[]>();
@@ -759,13 +703,12 @@ export class SQLiteAdapter extends BaseAdapter {
     for (const row of subjectRows) {
       const subject = new Subject();
 
-      // Add roles with their rights
-      const subjectRoleNames = subjectRolesMap.get(row.id) ?? [];
-      for (const roleName of subjectRoleNames) {
-        const roleRights = roleRightsMap.get(roleName) ?? new Rights();
-        const role = new Role(roleName, roleRights);
-        subject.memberOf(role);
-      }
+      // Add roles with their (inherited) rights
+      this.applyRolesToSubject(
+        subject,
+        subjectRolesMap.get(row.id) ?? [],
+        registry
+      );
 
       // Add direct rights
       const directRights = subjectDirectRightsMap.get(row.id);
@@ -779,136 +722,6 @@ export class SQLiteAdapter extends BaseAdapter {
     }
 
     return { items, total };
-  }
-
-  protected async getAllSubjectIdentifiers(): Promise<string[]> {
-    if (!this.db) {
-      throw new Error('Not connected');
-    }
-
-    const rows = this.db
-      .prepare(`SELECT identifier FROM ${this.tables.subjects}`)
-      .all() as Array<{ identifier: string }>;
-
-    return rows.map(row => row.identifier);
-  }
-
-  /**
-   * Optimized findSubjectsWithAccess using batch loading with JOINs.
-   * Reduces N+1 queries to a constant number of queries regardless of subject count.
-   */
-  override async findSubjectsWithAccess(
-    pathPattern: string,
-    flags: Flags
-  ): Promise<string[]> {
-    if (!this.db) {
-      throw new Error('Not connected');
-    }
-
-    const { rights, roleRights, roles, subjectRights, subjectRoles, subjects } =
-      this.tables;
-
-    // Load all subjects with their data in batch queries
-    const subjectRows = this.db
-      .prepare(`SELECT id, identifier FROM ${subjects}`)
-      .all() as Array<{ id: number; identifier: string }>;
-
-    if (subjectRows.length === 0) {
-      return [];
-    }
-
-    // Create a map of subject id -> identifier for quick lookup
-    const subjectIdToIdentifier = new Map<number, string>();
-    const subjectIdentifierToId = new Map<string, number>();
-    for (const row of subjectRows) {
-      subjectIdToIdentifier.set(row.id, row.identifier);
-      subjectIdentifierToId.set(row.identifier, row.id);
-    }
-
-    // Batch load all subject-role mappings with role names
-    const subjectRoleRows = this.db
-      .prepare(
-        `SELECT sr.subject_id, r.name as role_name
-         FROM ${subjectRoles} sr
-         JOIN ${roles} r ON sr.role_id = r.id`
-      )
-      .all() as Array<{ role_name: string; subject_id: number }>;
-
-    // Batch load all subject direct rights
-    const subjectRightRows = this.db
-      .prepare(
-        `SELECT sr.subject_id, rt.*
-         FROM ${subjectRights} sr
-         JOIN ${rights} rt ON sr.right_id = rt.id`
-      )
-      .all() as Array<{ subject_id: number } & RightsRow>;
-
-    // Batch load all role rights
-    const roleRightRows = this.db
-      .prepare(
-        `SELECT r.name as role_name, rt.*
-         FROM ${roleRights} rr
-         JOIN ${roles} r ON rr.role_id = r.id
-         JOIN ${rights} rt ON rr.right_id = rt.id`
-      )
-      .all() as Array<{ role_name: string } & RightsRow>;
-
-    // Build role -> rights mapping
-    const roleRightsMap = new Map<string, Rights>();
-    for (const row of roleRightRows) {
-      if (!roleRightsMap.has(row.role_name)) {
-        roleRightsMap.set(row.role_name, new Rights());
-      }
-      roleRightsMap.get(row.role_name)!.add(this.rowToRight(row));
-    }
-
-    // Build subject -> roles mapping
-    const subjectRolesMap = new Map<number, string[]>();
-    for (const row of subjectRoleRows) {
-      if (!subjectRolesMap.has(row.subject_id)) {
-        subjectRolesMap.set(row.subject_id, []);
-      }
-      subjectRolesMap.get(row.subject_id)!.push(row.role_name);
-    }
-
-    // Build subject -> direct rights mapping
-    const subjectDirectRightsMap = new Map<number, Rights>();
-    for (const row of subjectRightRows) {
-      if (!subjectDirectRightsMap.has(row.subject_id)) {
-        subjectDirectRightsMap.set(row.subject_id, new Rights());
-      }
-      subjectDirectRightsMap.get(row.subject_id)!.add(this.rowToRight(row));
-    }
-
-    // Now construct Subject objects and check access
-    const matchingSubjects: string[] = [];
-
-    for (const [subjectId, identifier] of subjectIdToIdentifier) {
-      const subject = new Subject();
-
-      // Add roles with their rights
-      const roleNames = subjectRolesMap.get(subjectId) ?? [];
-      for (const roleName of roleNames) {
-        const roleRights = roleRightsMap.get(roleName) ?? new Rights();
-        const role = new Role(roleName, roleRights);
-        subject.memberOf(role);
-      }
-
-      // Add direct rights
-      const directRights = subjectDirectRightsMap.get(subjectId);
-      if (directRights) {
-        for (const right of directRights.allRights()) {
-          subject.rights.add(right);
-        }
-      }
-
-      // Check if subject has the requested access
-      if (subject.has(pathPattern, flags)) {
-        matchingSubjects.push(identifier);
-      }
-    }
-
-    return matchingSubjects;
   }
 
   // ===========================================================================

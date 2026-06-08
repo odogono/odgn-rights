@@ -1,4 +1,13 @@
 
+## 0.6.3 - 2026-06-08
+
+### Fixed
+
+- Database adapters now hydrate inherited role rights when loading roles,
+  subjects, subject lists, paginated subjects, and subject access queries.
+  This preserves persisted subject access for roles that inherit permissions
+  from parent roles across SQLite, PostgreSQL, and Redis adapters.
+
 
 
 ## 0.6.2 - 2026-01-21
