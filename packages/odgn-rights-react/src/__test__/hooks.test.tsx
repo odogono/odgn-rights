@@ -13,6 +13,7 @@ import {
   PermissionProvider,
   createFetchPermissionClient,
   invalidatePermissions,
+  permissionQueryKey,
   usePermission,
   usePermissions
 } from '../index';
@@ -42,7 +43,82 @@ const createWrapper = (client: PermissionClient, sessionKey = 'session-1') => {
   return { queryClient, wrapper };
 };
 
+describe('permission query keys', () => {
+  test('uses the same compact key for equivalent normalized checks', () => {
+    const firstKey = permissionQueryKey('session-1', [
+      { flags: ' R ', path: ' /demo/dashboard ' }
+    ]);
+    const secondKey = permissionQueryKey('session-1', [
+      { flags: 'r', path: '/demo/dashboard' }
+    ]);
+
+    expect(firstKey).toEqual(secondKey);
+    expect(JSON.stringify(firstKey)).not.toContain('/demo/dashboard');
+  });
+
+  test('keeps the compact fingerprint order-sensitive', () => {
+    const firstKey = permissionQueryKey('session-1', [
+      { flags: 'r', path: '/demo/dashboard' },
+      { flags: 'w', path: '/demo/admin' }
+    ]);
+    const secondKey = permissionQueryKey('session-1', [
+      { flags: 'w', path: '/demo/admin' },
+      { flags: 'r', path: '/demo/dashboard' }
+    ]);
+
+    expect(firstKey).not.toEqual(secondKey);
+  });
+
+  test('invalidates compact permission queries by the shared prefix', async () => {
+    const queryClient = new QueryClient();
+    const queryKey = permissionQueryKey('session-1', [
+      { flags: 'r', path: '/demo/dashboard' }
+    ]);
+
+    queryClient.setQueryData(queryKey, {
+      results: [
+        {
+          allowed: true,
+          flags: 'r',
+          path: '/demo/dashboard',
+          reason: 'allowed'
+        }
+      ]
+    });
+
+    await invalidatePermissions(queryClient);
+
+    expect(queryClient.getQueryState(queryKey)?.isInvalidated).toBe(true);
+  });
+});
+
 describe('odgn-rights-react hooks', () => {
+  test('sends normalized checks to the permission client', async () => {
+    const requests: PermissionCheck[][] = [];
+    const client: PermissionClient = {
+      check: async input => {
+        requests.push(input.checks);
+
+        return {
+          results: input.checks.map(check => ({
+            ...check,
+            allowed: true,
+            reason: 'allowed'
+          }))
+        };
+      }
+    };
+    const { wrapper } = createWrapper(client);
+    const { result } = renderHook(
+      () => usePermissions([{ flags: ' R ', path: ' /demo/dashboard ' }]),
+      { wrapper }
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(requests).toEqual([[{ flags: 'r', path: '/demo/dashboard' }]]);
+  });
+
   test('returns allowed and denied results for a batch of checks', async () => {
     const checks: PermissionCheck[] = [
       { flags: 'r', path: '/demo/dashboard' },

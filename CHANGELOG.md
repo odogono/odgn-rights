@@ -1,3 +1,19 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## odgn-rights-react 0.1.1 - 2026-06-25
+
+### Fixed
+
+- React permission queries now use compact, order-sensitive cache-key
+  fingerprints while preserving normalized server-backed permission check
+  requests and prefix invalidation behavior.
 
 ## 0.6.3 - 2026-06-08
 
@@ -8,10 +24,7 @@
   This preserves persisted subject access for roles that inherit permissions
   from parent roles across SQLite, PostgreSQL, and Redis adapters.
 
-
-
 ## 0.6.2 - 2026-01-21
-
 
 ### Fixed
 

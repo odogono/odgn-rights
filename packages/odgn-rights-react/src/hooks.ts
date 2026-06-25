@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   normalizePermissionCheck,
   normalizePermissionChecks,
-  PERMISSIONS_QUERY_KEY
+  permissionQueryKey
 } from './keys';
 import { usePermissionContext } from './provider';
 import type {
@@ -29,7 +29,7 @@ export const usePermissions = (
   return useQuery({
     enabled,
     queryFn: () => context.client.check({ checks: normalizedChecks }),
-    queryKey: [...PERMISSIONS_QUERY_KEY, context.sessionKey, normalizedChecks],
+    queryKey: permissionQueryKey(context.sessionKey, normalizedChecks),
     staleTime: options.staleTime ?? context.staleTime
   });
 };
