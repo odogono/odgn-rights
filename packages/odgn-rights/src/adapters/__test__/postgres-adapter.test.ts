@@ -1,3 +1,4 @@
+import { SQL } from 'bun';
 import {
   afterAll,
   afterEach,
@@ -21,6 +22,13 @@ const POSTGRES_IMAGE = 'postgres:17-alpine';
 
 const startPostgresContainer = async (): Promise<StartedTestContainer> =>
   new GenericContainer(POSTGRES_IMAGE)
+    .withCommand([
+      'postgres',
+      '-c',
+      'shared_preload_libraries=pg_stat_statements',
+      '-c',
+      'compute_query_id=on'
+    ])
     .withEnvironment({
       POSTGRES_DB: 'test',
       POSTGRES_PASSWORD: 'test',
@@ -38,12 +46,42 @@ const getConnectionUri = (container: StartedTestContainer): string => {
   return `postgres://test:test@${host}:${port}/test`;
 };
 
+const countPermissionQueries = async <T>(
+  container: StartedTestContainer,
+  operation: () => Promise<T>
+): Promise<{ calls: number; result: T }> => {
+  const sql = new SQL(getConnectionUri(container));
+  await sql`SELECT pg_stat_statements_reset()`;
+
+  const result = await operation();
+  const [row] = await sql<{ calls: string }[]>`
+    SELECT COALESCE(SUM(calls), 0)::text AS calls
+    FROM pg_stat_statements
+    WHERE query NOT ILIKE '%pg_stat_statements%'
+      AND (
+        query ILIKE '%roles%'
+        OR query ILIKE '%role_rights%'
+        OR query ILIKE '%role_inheritance%'
+        OR query ILIKE '%rights%'
+        OR query ILIKE '%subjects%'
+        OR query ILIKE '%subject_roles%'
+        OR query ILIKE '%subject_rights%'
+      )
+  `;
+  await sql.end();
+
+  return { calls: Number(row?.calls ?? '0'), result };
+};
+
 describe('PostgresAdapter', () => {
   let container: StartedTestContainer;
   let adapter: PostgresAdapter;
 
   beforeAll(async () => {
     container = await startPostgresContainer();
+    const sql = new SQL(getConnectionUri(container));
+    await sql`CREATE EXTENSION IF NOT EXISTS pg_stat_statements`;
+    await sql.end();
   }, 120_000);
 
   afterAll(async () => {
@@ -177,6 +215,97 @@ describe('PostgresAdapter', () => {
   });
 
   describe('RoleRegistry operations', () => {
+    test('loadRegistry uses two queries regardless of registry size', async () => {
+      const { RoleRegistry, Subject } = await import('../../index');
+
+      const registry = new RoleRegistry();
+      const shared = registry.define('shared');
+      shared.rights.allow('/shared', Flags.READ);
+
+      for (let index = 0; index < 12; index += 1) {
+        const role = registry.define(`role-${index}`);
+        role.rights.allow(`/role-${index}`, Flags.READ);
+        role.rights.add(shared.rights.allRights()[0]!);
+        if (index > 0) {
+          role.inheritsFrom(registry.get(`role-${index - 1}`)!);
+        }
+      }
+      registry.define('empty');
+      await adapter.saveRegistry(registry);
+
+      const { calls, result: loaded } = await countPermissionQueries(
+        container,
+        () => adapter.loadRegistry()
+      );
+
+      expect(calls).toBe(2);
+      expect(loaded.get('empty')).toBeDefined();
+      const subject = new Subject().memberOf(loaded.get('role-11')!);
+      expect(subject.read('/shared')).toBe(true);
+      expect(subject.read('/role-0')).toBe(true);
+    });
+
+    test('loadRegistry keeps a production-shaped query count constant', async () => {
+      const sql = new SQL(getConnectionUri(container));
+      await sql`
+        INSERT INTO tbl_roles (name)
+        SELECT 'production-role-' || role_number
+        FROM generate_series(1, 52) role_number
+      `;
+      await sql`
+        INSERT INTO tbl_rights (path, allow_mask, deny_mask, priority)
+        SELECT '/production/right/' || right_number, 1, 0, 0
+        FROM generate_series(1, 52051) right_number
+      `;
+      await sql`
+        INSERT INTO tbl_role_rights (role_id, right_id)
+        SELECT role.id, mapped_right.id
+        FROM (
+          SELECT id, row_number() OVER (ORDER BY id) AS role_number
+          FROM tbl_roles
+          WHERE name LIKE 'production-role-%'
+        ) role
+        JOIN (
+          SELECT id, row_number() OVER (ORDER BY id) AS right_number
+          FROM tbl_rights
+          WHERE path LIKE '/production/right/%'
+        ) mapped_right
+          ON ((mapped_right.right_number - 1) % 52) + 1 = role.role_number
+        WHERE mapped_right.right_number <= 1026
+      `;
+      await sql`
+        INSERT INTO tbl_role_inheritance (child_role_id, parent_role_id)
+        SELECT child.id, parent.id
+        FROM (
+          SELECT id, row_number() OVER (ORDER BY id) AS role_number
+          FROM tbl_roles
+          WHERE name LIKE 'production-role-%'
+        ) child
+        JOIN (
+          SELECT id, row_number() OVER (ORDER BY id) AS role_number
+          FROM tbl_roles
+          WHERE name LIKE 'production-role-%'
+        ) parent ON parent.role_number = child.role_number - 1
+        WHERE child.role_number BETWEEN 2 AND 10
+      `;
+      await sql.end();
+
+      const { calls, result: loaded } = await countPermissionQueries(
+        container,
+        () => adapter.loadRegistry()
+      );
+      const mappedRights = loaded
+        .getAll()
+        .reduce((total, role) => total + role.rights.allRights().length, 0);
+
+      expect(calls).toBe(2);
+      expect(loaded.getAll()).toHaveLength(52);
+      expect(mappedRights).toBe(1026);
+      expect(loaded.get('production-role-10')?.parents[0]?.name).toBe(
+        'production-role-9'
+      );
+    });
+
     test('saveRegistry and loadRegistry round-trip', async () => {
       const { RoleRegistry } = await import('../../index');
 
@@ -202,6 +331,60 @@ describe('PostgresAdapter', () => {
   });
 
   describe('Subject operations', () => {
+    test('loadSubject uses two queries with a preloaded registry', async () => {
+      const { RoleRegistry, Subject } = await import('../../index');
+
+      const registry = new RoleRegistry();
+      const viewer = registry.define('viewer');
+      viewer.rights.allow('/shared', Flags.READ);
+      const editor = registry.define('editor');
+      editor.rights.allow('/content', Flags.WRITE);
+      editor.inheritsFrom(viewer);
+      await adapter.saveRegistry(registry);
+
+      const subject = new Subject().memberOf(editor);
+      subject.rights.allow('/profile', Flags.READ);
+      await adapter.saveSubject('batched-user', subject);
+      const preloadedRegistry = await adapter.loadRegistry();
+
+      const { calls, result: loaded } = await countPermissionQueries(
+        container,
+        () => adapter.loadSubject('batched-user', preloadedRegistry)
+      );
+
+      expect(calls).toBe(2);
+      expect(loaded?.read('/shared')).toBe(true);
+      expect(loaded?.write('/content')).toBe(true);
+      expect(loaded?.read('/profile')).toBe(true);
+    });
+
+    test('loadSubject uses four queries when it loads the registry', async () => {
+      const { RoleRegistry, Subject } = await import('../../index');
+
+      const registry = new RoleRegistry();
+      const role = registry.define('cold-reader');
+      role.rights.allow('/cold', Flags.READ);
+      await adapter.saveRegistry(registry);
+      await adapter.saveSubject('cold-user', new Subject().memberOf(role));
+
+      const { calls, result: loaded } = await countPermissionQueries(
+        container,
+        () => adapter.loadSubject('cold-user')
+      );
+
+      expect(calls).toBe(4);
+      expect(loaded?.read('/cold')).toBe(true);
+    });
+
+    test('loadSubject returns a missing subject after one query', async () => {
+      const { calls, result } = await countPermissionQueries(container, () =>
+        adapter.loadSubject('missing-user')
+      );
+
+      expect(calls).toBe(1);
+      expect(result).toBeNull();
+    });
+
     test('saveSubject and loadSubject round-trip', async () => {
       const { RoleRegistry, Subject } = await import('../../index');
 
