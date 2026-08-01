@@ -14,7 +14,6 @@ import type {
   PaginationOptions,
   RightsRow,
   RoleInheritanceRow,
-  RoleRow,
   SubjectWithIdentifier
 } from './types';
 
@@ -253,39 +252,6 @@ export class PostgresAdapter extends BaseAdapter {
     });
   }
 
-  private async loadRoleDirect(name: string): Promise<Role | null> {
-    if (!this.sql) {
-      throw new Error('Not connected');
-    }
-
-    const { roleRights, roles } = this.tables;
-
-    const [roleRow] = await this.sql.unsafe(
-      `SELECT * FROM ${roles} WHERE name = $1`,
-      [name]
-    );
-
-    if (!roleRow) {
-      return null;
-    }
-
-    const rights = new Rights();
-
-    const roleRightRows = await this.sql.unsafe(
-      `SELECT right_id FROM ${roleRights} WHERE role_id = $1`,
-      [roleRow.id]
-    );
-
-    for (const rr of roleRightRows) {
-      const right = await this.loadRight((rr as { right_id: number }).right_id);
-      if (right) {
-        rights.add(right);
-      }
-    }
-
-    return new Role(name, rights);
-  }
-
   async loadRoles(): Promise<Role[]> {
     const registry = await this.loadRegistry();
     return registry.getAll();
@@ -346,27 +312,41 @@ export class PostgresAdapter extends BaseAdapter {
       throw new Error('Not connected');
     }
 
-    const { roles: rolesTable } = this.tables;
+    const { rights, roleInheritance, roleRights, roles } = this.tables;
 
-    const roleRows = await this.sql.unsafe(
-      `SELECT * FROM ${rolesTable} ORDER BY id`
-    );
+    // Roles left-joined onto their mapped rights: one row per mapping, and a
+    // single row with null right columns for roles that have none.
+    type RoleRightJoinRow = Omit<RightsRow, 'id'> & {
+      id: number | null;
+      role_id: number;
+      role_name: string;
+    };
 
-    const roleMap = new Map<string, { id: number; role: Role }>();
+    const roleRightRows = (await this.sql.unsafe(`
+      SELECT
+        role.id AS role_id,
+        role.name AS role_name,
+        mapped_right.*
+      FROM ${roles} role
+      LEFT JOIN ${roleRights} role_right
+        ON role_right.role_id = role.id
+      LEFT JOIN ${rights} mapped_right
+        ON mapped_right.id = role_right.right_id
+      ORDER BY role.id, mapped_right.id
+    `)) as RoleRightJoinRow[];
 
-    for (const row of roleRows) {
-      const roleRow = row as RoleRow;
-      const role = await this.loadRoleDirect(roleRow.name);
+    const roleMap = new Map<number, Role>();
+    for (const row of roleRightRows) {
+      let role = roleMap.get(row.role_id);
       if (!role) {
-        continue;
+        role = registry.define(row.role_name);
+        roleMap.set(row.role_id, role);
       }
 
-      // Define the role in the registry and get the registered role back
-      const registeredRole = registry.define(role.name, role.rights);
-      roleMap.set(role.name, { id: roleRow.id, role: registeredRole });
+      if (row.id !== null) {
+        role.rights.add(this.rowToRight(row as RightsRow));
+      }
     }
-
-    const { roleInheritance } = this.tables;
 
     const inheritRows = await this.sql!.unsafe(
       `SELECT child_role_id, parent_role_id FROM ${roleInheritance}`
@@ -374,18 +354,8 @@ export class PostgresAdapter extends BaseAdapter {
 
     for (const ir of inheritRows) {
       const inheritanceRow = ir as RoleInheritanceRow;
-
-      let childRole: Role | undefined;
-      let parentRole: Role | undefined;
-
-      for (const [, data] of roleMap.entries()) {
-        if (data.id === inheritanceRow.child_role_id) {
-          childRole = data.role;
-        }
-        if (data.id === inheritanceRow.parent_role_id) {
-          parentRole = data.role;
-        }
-      }
+      const childRole = roleMap.get(inheritanceRow.child_role_id);
+      const parentRole = roleMap.get(inheritanceRow.parent_role_id);
 
       if (childRole && parentRole) {
         childRole.inheritsFrom(parentRole);
@@ -457,52 +427,49 @@ export class PostgresAdapter extends BaseAdapter {
       throw new Error('Not connected');
     }
 
-    const { roles, subjectRights, subjectRoles, subjects } = this.tables;
-
-    const [subjectRow] = await this.sql.unsafe(
-      `SELECT * FROM ${subjects} WHERE identifier = $1`,
+    const { rights, roles, subjectRights, subjectRoles, subjects } =
+      this.tables;
+    const subjectRoleRows = (await this.sql.unsafe(
+      `
+      SELECT
+        subject.id AS subject_id,
+        role.name AS role_name
+      FROM ${subjects} subject
+      LEFT JOIN ${subjectRoles} subject_role
+        ON subject_role.subject_id = subject.id
+      LEFT JOIN ${roles} role
+        ON role.id = subject_role.role_id
+      WHERE subject.identifier = $1
+      ORDER BY role.id
+      `,
       [identifier]
-    );
+    )) as Array<{ role_name: string | null; subject_id: number }>;
 
+    const [subjectRow] = subjectRoleRows;
     if (!subjectRow) {
       return null;
     }
 
     const subject = new Subject();
     const reg = registry ?? (await this.loadRegistry());
-
-    const subjectRoleRows = await this.sql.unsafe(
-      `SELECT role_id FROM ${subjectRoles} WHERE subject_id = $1`,
-      [subjectRow.id]
-    );
-
-    const roleNames: string[] = [];
-    for (const sr of subjectRoleRows) {
-      const subjectRoleRow = sr as { role_id: number };
-
-      const [roleName] = await this.sql.unsafe(
-        `SELECT name FROM ${roles} WHERE id = $1`,
-        [subjectRoleRow.role_id]
-      );
-
-      if (roleName) {
-        roleNames.push((roleName as { name: string }).name);
-      }
-    }
+    const roleNames = subjectRoleRows
+      .map(row => row.role_name)
+      .filter((roleName): roleName is string => roleName !== null);
     this.applyRolesToSubject(subject, roleNames, reg);
 
     const subjectRightRows = await this.sql.unsafe(
-      `SELECT right_id FROM ${subjectRights} WHERE subject_id = $1`,
-      [subjectRow.id]
+      `
+      SELECT mapped_right.*
+      FROM ${subjectRights} subject_right
+      JOIN ${rights} mapped_right ON mapped_right.id = subject_right.right_id
+      WHERE subject_right.subject_id = $1
+      ORDER BY mapped_right.id
+      `,
+      [subjectRow.subject_id]
     );
 
-    for (const sr of subjectRightRows) {
-      const subjectRightRow = sr as { right_id: number };
-
-      const right = await this.loadRight(subjectRightRow.right_id);
-      if (right) {
-        subject.rights.add(right);
-      }
+    for (const row of subjectRightRows) {
+      subject.rights.add(this.rowToRight(row as RightsRow));
     }
 
     return subject;

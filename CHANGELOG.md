@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.6.4 - 2026-08-01
+
+### Fixed
+
+- PostgreSQL role registries now load roles with mapped rights and inheritance
+  in two batched queries instead of issuing queries per role and right.
+- PostgreSQL subjects now batch role-name and direct-right hydration while
+  continuing to support optional preloaded registries.
+
 ## odgn-rights-react 0.1.1 - 2026-06-25
 
 ### Fixed
