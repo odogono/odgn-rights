@@ -252,39 +252,6 @@ export class PostgresAdapter extends BaseAdapter {
     });
   }
 
-  private async loadRoleDirect(name: string): Promise<Role | null> {
-    if (!this.sql) {
-      throw new Error('Not connected');
-    }
-
-    const { roleRights, roles } = this.tables;
-
-    const [roleRow] = await this.sql.unsafe(
-      `SELECT * FROM ${roles} WHERE name = $1`,
-      [name]
-    );
-
-    if (!roleRow) {
-      return null;
-    }
-
-    const rights = new Rights();
-
-    const roleRightRows = await this.sql.unsafe(
-      `SELECT right_id FROM ${roleRights} WHERE role_id = $1`,
-      [roleRow.id]
-    );
-
-    for (const rr of roleRightRows) {
-      const right = await this.loadRight((rr as { right_id: number }).right_id);
-      if (right) {
-        rights.add(right);
-      }
-    }
-
-    return new Role(name, rights);
-  }
-
   async loadRoles(): Promise<Role[]> {
     const registry = await this.loadRegistry();
     return registry.getAll();
@@ -346,33 +313,38 @@ export class PostgresAdapter extends BaseAdapter {
     }
 
     const { rights, roleInheritance, roleRights, roles } = this.tables;
-    const roleRightRows = await this.sql.unsafe(`
+
+    // Roles left-joined onto their mapped rights: one row per mapping, and a
+    // single row with null right columns for roles that have none.
+    type RoleRightJoinRow = Omit<RightsRow, 'id'> & {
+      id: number | null;
+      role_id: number;
+      role_name: string;
+    };
+
+    const roleRightRows = (await this.sql.unsafe(`
       SELECT
         role.id AS role_id,
         role.name AS role_name,
-        to_jsonb(mapped_right) AS mapped_right
+        mapped_right.*
       FROM ${roles} role
       LEFT JOIN ${roleRights} role_right
         ON role_right.role_id = role.id
       LEFT JOIN ${rights} mapped_right
         ON mapped_right.id = role_right.right_id
       ORDER BY role.id, mapped_right.id
-    `);
+    `)) as RoleRightJoinRow[];
 
     const roleMap = new Map<number, Role>();
     for (const row of roleRightRows) {
-      const roleRightRow = row as {
-        mapped_right: RightsRow | null;
-        role_id: number;
-        role_name: string;
-      };
-      const role =
-        roleMap.get(roleRightRow.role_id) ??
-        registry.define(roleRightRow.role_name);
-      roleMap.set(roleRightRow.role_id, role);
+      let role = roleMap.get(row.role_id);
+      if (!role) {
+        role = registry.define(row.role_name);
+        roleMap.set(row.role_id, role);
+      }
 
-      if (roleRightRow.mapped_right?.id) {
-        role.rights.add(this.rowToRight(roleRightRow.mapped_right));
+      if (row.id !== null) {
+        role.rights.add(this.rowToRight(row as RightsRow));
       }
     }
 
@@ -457,7 +429,7 @@ export class PostgresAdapter extends BaseAdapter {
 
     const { rights, roles, subjectRights, subjectRoles, subjects } =
       this.tables;
-    const subjectRoleRows = await this.sql.unsafe(
+    const subjectRoleRows = (await this.sql.unsafe(
       `
       SELECT
         subject.id AS subject_id,
@@ -471,23 +443,20 @@ export class PostgresAdapter extends BaseAdapter {
       ORDER BY role.id
       `,
       [identifier]
-    );
+    )) as Array<{ role_name: string | null; subject_id: number }>;
 
-    if (subjectRoleRows.length === 0) {
+    const [subjectRow] = subjectRoleRows;
+    if (!subjectRow) {
       return null;
     }
 
     const subject = new Subject();
     const reg = registry ?? (await this.loadRegistry());
-    const roleNames = (
-      subjectRoleRows as Array<{ role_name: string | null }>
-    ).flatMap(row => {
-      const roleName = row.role_name;
-      return roleName ? [roleName] : [];
-    });
+    const roleNames = subjectRoleRows
+      .map(row => row.role_name)
+      .filter((roleName): roleName is string => roleName !== null);
     this.applyRolesToSubject(subject, roleNames, reg);
 
-    const subjectId = (subjectRoleRows[0] as { subject_id: number }).subject_id;
     const subjectRightRows = await this.sql.unsafe(
       `
       SELECT mapped_right.*
@@ -496,7 +465,7 @@ export class PostgresAdapter extends BaseAdapter {
       WHERE subject_right.subject_id = $1
       ORDER BY mapped_right.id
       `,
-      [subjectId]
+      [subjectRow.subject_id]
     );
 
     for (const row of subjectRightRows) {
