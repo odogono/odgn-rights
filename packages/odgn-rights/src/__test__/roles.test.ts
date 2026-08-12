@@ -505,11 +505,18 @@ describe('Role.removeParent', () => {
     const child = new Role('child');
     child.inheritsFrom(parent);
 
+    // Populate the inherited-rights cache first, so removal has to invalidate
+    // it rather than merely never having built it.
+    expect(child.allRights()).toHaveLength(1);
+
     child.removeParent(parent);
+
     expect(child.allRights()).toHaveLength(0);
+    expect(child.toJSON().inherits).toBeUndefined();
 
     child.inheritsFrom(parent);
     expect(child.allRights()).toHaveLength(1);
+    expect(child.toJSON().inherits).toEqual(['parent']);
   });
 });
 
@@ -532,6 +539,11 @@ describe('RoleRegistry.delete', () => {
     // leaf loses the edge to middle, and with it middle's inherited rights
     expect(leaf.parents).toHaveLength(0);
     expect(leaf.allRights()).toHaveLength(1);
+    // the deleted role is detached from its own parents too, so it does not
+    // keep base reachable through a stale children entry
+    expect(middle.parents).toHaveLength(0);
+    expect(middle.toJSON().inherits).toBeUndefined();
+    expect(middle.allRights()).toHaveLength(1); // its own right, not base's
   });
 
   it('leaves unrelated inheritance intact', () => {

@@ -254,6 +254,63 @@ describe('SQLiteAdapter', () => {
       expect((await adapter.loadRegistry()).get('keep')).toBeDefined();
       expect((await adapter.loadRegistry()).get('remove')).toBeUndefined();
     });
+
+    test('conditional commit keeps parents that were never defined on the registry', async () => {
+      const { Role, RoleRegistry, Subject } = await import('../../index');
+      const seed = new RoleRegistry();
+      seed.define('base', new Rights().allow('/base', Flags.READ));
+      seed.define('child').inheritsFrom(seed.get('base')!);
+      await adapter.saveRegistry(seed);
+
+      const member = new Subject().memberOf(seed.get('base')!);
+      await adapter.saveSubject('member', member);
+
+      // A registry whose only defined role inherits from an undefined parent.
+      // saveRegistry persists that parent, so the conditional commit must not
+      // treat it as deleted: deleting and re-inserting it strands every row
+      // keyed on the old role id, silently unassigning the subject.
+      const detached = new RoleRegistry();
+      const orphanParent = new Role(
+        'base',
+        new Rights().allow('/base', Flags.READ)
+      );
+      detached.define('child').inheritsFrom(orphanParent);
+
+      const snapshot = await adapter.loadRegistrySnapshot();
+      expect(
+        await adapter.saveRegistryIfRevision(detached, snapshot.revision)
+      ).toEqual({ committed: true, revision: snapshot.revision + 1 });
+
+      expect(
+        (await adapter.loadRoleSummaries({ name: 'base' })).items.map(
+          item => item.name
+        )
+      ).toEqual(['base']);
+      const reloaded = await adapter.loadSubject('member');
+      expect(reloaded?.read('/base')).toBe(true);
+    });
+
+    test('filters summaries case-insensitively for non-ASCII names', async () => {
+      const { RoleRegistry } = await import('../../index');
+      const registry = new RoleRegistry();
+      registry.define('Éditeur');
+      registry.define('Ingeniør');
+      registry.define('plain');
+      await adapter.saveRegistry(registry);
+
+      // SQLite's lower() folds ASCII only, so this must be matched in JS to
+      // stay consistent with the PostgreSQL and Redis adapters.
+      expect(
+        (await adapter.loadRoleSummaries({ name: 'éditeur' })).items.map(
+          item => item.name
+        )
+      ).toEqual(['Éditeur']);
+      expect(
+        (await adapter.loadRoleSummaries({ name: 'INGENIØR' })).items.map(
+          item => item.name
+        )
+      ).toEqual(['Ingeniør']);
+    });
   });
 
   describe('Subject operations', () => {

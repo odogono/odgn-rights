@@ -449,7 +449,10 @@ await adapter.saveRights(rights);
 const loaded = await adapter.loadRights();
 loaded.has('/users/123', Flags.READ); // true
 
-// Save and load roles
+// Save and load roles.
+// saveTo() is an unconditional write — fine for a single writer like this
+// example. Where writers can overlap, use the revision-aware pattern in
+// "Concurrent Role Registry Writes" below instead.
 const { Role, RoleRegistry } = await import('odgn-rights');
 const registry = new RoleRegistry();
 const admin = registry.define('admin');
@@ -526,6 +529,7 @@ const { adapter: regAdapter, registry } = await createSQLiteRegistry({
 });
 const viewer = registry.define('viewer');
 viewer.rights.allow('/read/*', Flags.READ);
+// Single-writer convenience; see "Concurrent Role Registry Writes" below.
 await registry.saveTo(regAdapter);
 await regAdapter.disconnect();
 ```

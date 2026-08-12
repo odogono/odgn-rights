@@ -323,21 +323,27 @@ export class SQLiteAdapter extends BaseAdapter {
       throw new Error('Not connected');
     }
     const { roleRegistryState, roles } = this.tables;
-    const name = query.name?.trim().toLocaleLowerCase() ?? '';
+    const needle = query.name?.trim().toLocaleLowerCase() ?? '';
     // Read the rows and the revision in one transaction, so a competing
     // writer cannot commit between them and leave the caller holding stale
     // summaries stamped with the revision that replaced them.
     return this.transaction(async () => {
-      const rows = this.db!.query(
+      // SQLite's lower() folds ASCII only, so filtering in SQL would miss
+      // Unicode case variants that PostgreSQL's LOWER() and the Redis
+      // adapter's JS folding both match. Filter in JS instead, using the same
+      // folding as the needle, so all three backends agree.
+      const allRows = this.db!.query(
         `SELECT name, created_at, updated_at
          FROM ${roles}
-         WHERE $name = '' OR instr(lower(name), $name) > 0
          ORDER BY created_at, name COLLATE NOCASE, name`
-      ).all({ $name: name }) as Array<{
+      ).all() as Array<{
         created_at: string;
         name: string;
         updated_at: string;
       }>;
+      const rows = needle
+        ? allRows.filter(row => row.name.toLocaleLowerCase().includes(needle))
+        : allRows;
       const state = this.db!.query(
         `SELECT revision FROM ${roleRegistryState} WHERE singleton = 1`
       ).get() as { revision: number } | undefined;
@@ -378,25 +384,7 @@ export class SQLiteAdapter extends BaseAdapter {
     }
 
     await this.transaction(async () => {
-      const rolesToSave = new Map<string, Role>();
-
-      const collectRoles = (role: Role) => {
-        if (!rolesToSave.has(role.name)) {
-          rolesToSave.set(role.name, role);
-          for (const parent of role.parents) {
-            collectRoles(parent);
-          }
-        }
-      };
-
-      registry.toJSON().forEach(roleJson => {
-        const role = registry.get(roleJson.name);
-        if (role) {
-          collectRoles(role);
-        }
-      });
-
-      for (const role of rolesToSave.values()) {
+      for (const role of this.collectPersistedRoles(registry).values()) {
         await this.saveRole(role);
       }
       this.db!.run(
@@ -427,7 +415,7 @@ export class SQLiteAdapter extends BaseAdapter {
       if (revision !== expectedRevision) {
         return { committed: false, revision };
       }
-      const nextNames = new Set(registry.getAll().map(role => role.name));
+      const nextNames = new Set(this.collectPersistedRoles(registry).keys());
       const currentNames = this.stmtSelectAllRoles!.all() as RoleRow[];
       for (const current of currentNames) {
         if (!nextNames.has(current.name)) {

@@ -183,6 +183,36 @@ export abstract class BaseAdapter implements DatabaseAdapter {
   ): Promise<RegistryCommitResult>;
 
   /**
+   * Every role a whole-registry save persists: the registry's own roles plus
+   * the transitive closure of their parents, which may include roles that were
+   * attached with inheritsFrom() but never define()d on the registry.
+   *
+   * Both saveRegistry() and saveRegistryIfRevision() must agree on this set —
+   * if the conditional commit derived its keep-list from registry.getAll()
+   * alone, it would delete an unregistered parent that the save then re-creates
+   * with a fresh created_at, silently reordering summary results.
+   */
+  protected collectPersistedRoles(registry: RoleRegistry): Map<string, Role> {
+    const collected = new Map<string, Role>();
+
+    const collect = (role: Role) => {
+      if (collected.has(role.name)) {
+        return;
+      }
+      collected.set(role.name, role);
+      for (const parent of role.parents) {
+        collect(parent);
+      }
+    };
+
+    for (const role of registry.getAll()) {
+      collect(role);
+    }
+
+    return collected;
+  }
+
+  /**
    * Hydrate the named roles, with direct rights and inheritance resolved,
    * returning them in the order requested. Names absent from the registry are
    * skipped rather than erroring.

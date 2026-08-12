@@ -329,25 +329,7 @@ export class PostgresAdapter extends BaseAdapter {
       await this.sql!.unsafe(
         `SELECT revision FROM ${this.tables.roleRegistryState} WHERE singleton = 1 FOR UPDATE`
       );
-      const rolesToSave = new Map<string, Role>();
-
-      const collectRoles = (role: Role) => {
-        if (!rolesToSave.has(role.name)) {
-          rolesToSave.set(role.name, role);
-          for (const parent of role.parents) {
-            collectRoles(parent);
-          }
-        }
-      };
-
-      registry.toJSON().forEach(roleJson => {
-        const role = registry.get(roleJson.name);
-        if (role) {
-          collectRoles(role);
-        }
-      });
-
-      for (const role of rolesToSave.values()) {
+      for (const role of this.collectPersistedRoles(registry).values()) {
         await this.saveRole(role);
       }
       await this.sql!.unsafe(
@@ -389,7 +371,7 @@ export class PostgresAdapter extends BaseAdapter {
       if (revision !== expectedRevision) {
         return { committed: false, revision };
       }
-      const nextNames = new Set(registry.getAll().map(role => role.name));
+      const nextNames = new Set(this.collectPersistedRoles(registry).keys());
       const currentRoles = await this.sql!.unsafe<Array<{ name: string }>>(
         `SELECT name FROM ${this.tables.roles}`
       );
