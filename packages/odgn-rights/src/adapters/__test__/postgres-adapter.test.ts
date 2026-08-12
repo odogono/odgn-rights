@@ -58,7 +58,7 @@ const tables = createTableNames();
  * connection is separate purely so its own bookkeeping queries stay out of the
  * window. Assumes the adapter under test uses the default table prefix.
  */
-const countPermissionQueries = async <T>(
+const countAdapterQueries = async <T>(
   sql: SQL,
   operation: () => Promise<T>
 ): Promise<{ calls: number; result: T }> => {
@@ -243,7 +243,7 @@ describe('PostgresAdapter', () => {
       registry.define('empty');
       await adapter.saveRegistry(registry);
 
-      const { calls, result: loaded } = await countPermissionQueries(
+      const { calls, result: loaded } = await countAdapterQueries(
         statsSql,
         () => adapter.loadRegistry()
       );
@@ -288,7 +288,7 @@ describe('PostgresAdapter', () => {
           ON parent.name = 'production-role-' || (role_number - 1)
       `);
 
-      const { calls, result: loaded } = await countPermissionQueries(
+      const { calls, result: loaded } = await countAdapterQueries(
         statsSql,
         () => adapter.loadRegistry()
       );
@@ -326,6 +326,37 @@ describe('PostgresAdapter', () => {
       const editorRights = editorRole!.allRights();
       expect(editorRights.length).toBeGreaterThan(0);
     });
+
+    test('queries summaries and rejects a stale registry commit', async () => {
+      const { RoleRegistry } = await import('../../index');
+      const registry = new RoleRegistry();
+      registry.define('alpha');
+      registry.define('Alpine');
+      registry.define('Zulu');
+      await adapter.saveRegistry(registry);
+
+      const summaries = await adapter.loadRoleSummaries({ name: 'AL' });
+      expect(summaries.items.map(item => item.name)).toEqual([
+        'alpha',
+        'Alpine'
+      ]);
+      expect(
+        (await adapter.loadRolesByName(['Alpine'], summaries.revision)).map(
+          role => role.name
+        )
+      ).toEqual(['Alpine']);
+
+      const first = await adapter.loadRegistrySnapshot();
+      const stale = await adapter.loadRegistrySnapshot();
+      first.registry.define('winner');
+      stale.registry.define('loser');
+      expect(
+        await adapter.saveRegistryIfRevision(first.registry, first.revision)
+      ).toEqual({ committed: true, revision: first.revision + 1 });
+      expect(
+        await adapter.saveRegistryIfRevision(stale.registry, stale.revision)
+      ).toEqual({ committed: false, revision: first.revision + 1 });
+    });
   });
 
   describe('Subject operations', () => {
@@ -345,7 +376,7 @@ describe('PostgresAdapter', () => {
       await adapter.saveSubject('batched-user', subject);
       const preloadedRegistry = await adapter.loadRegistry();
 
-      const { calls, result: loaded } = await countPermissionQueries(
+      const { calls, result: loaded } = await countAdapterQueries(
         statsSql,
         () => adapter.loadSubject('batched-user', preloadedRegistry)
       );
@@ -371,7 +402,7 @@ describe('PostgresAdapter', () => {
       await adapter.saveSubject('bulk-user', subject);
       const preloadedRegistry = await adapter.loadRegistry();
 
-      const { calls, result: loaded } = await countPermissionQueries(
+      const { calls, result: loaded } = await countAdapterQueries(
         statsSql,
         () => adapter.loadSubject('bulk-user', preloadedRegistry)
       );
@@ -392,7 +423,7 @@ describe('PostgresAdapter', () => {
       await adapter.saveRegistry(registry);
       await adapter.saveSubject('cold-user', new Subject().memberOf(role));
 
-      const { calls, result: loaded } = await countPermissionQueries(
+      const { calls, result: loaded } = await countAdapterQueries(
         statsSql,
         () => adapter.loadSubject('cold-user')
       );
@@ -402,7 +433,7 @@ describe('PostgresAdapter', () => {
     });
 
     test('loadSubject returns a missing subject after one query', async () => {
-      const { calls, result } = await countPermissionQueries(statsSql, () =>
+      const { calls, result } = await countAdapterQueries(statsSql, () =>
         adapter.loadSubject('missing-user')
       );
 

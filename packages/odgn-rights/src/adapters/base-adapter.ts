@@ -4,13 +4,18 @@ import { Rights } from '../rights';
 import { Role } from '../role';
 import { RoleRegistry } from '../role-registry';
 import { Subject } from '../subject';
+import { RoleRegistryRevisionError } from './errors';
 import { DEFAULT_TABLE_PREFIX, createTableNames } from './schema';
 import type {
   BaseAdapterOptions,
   DatabaseAdapter,
   PaginatedResult,
   PaginationOptions,
+  RegistryCommitResult,
+  RevisionedRoleSummaries,
   RightsRow,
+  RoleRegistrySnapshot,
+  RoleSummaryQuery,
   SubjectWithIdentifier,
   TableNames
 } from './types';
@@ -164,10 +169,69 @@ export abstract class BaseAdapter implements DatabaseAdapter {
 
   abstract saveRole(role: Role): Promise<number>;
   abstract loadRoles(): Promise<Role[]>;
+  abstract loadRoleSummaries(
+    query?: RoleSummaryQuery
+  ): Promise<RevisionedRoleSummaries>;
   abstract deleteRole(name: string): Promise<boolean>;
 
   abstract saveRegistry(registry: RoleRegistry): Promise<void>;
   abstract loadRegistry(): Promise<RoleRegistry>;
+  abstract loadRegistrySnapshot(): Promise<RoleRegistrySnapshot>;
+  abstract saveRegistryIfRevision(
+    registry: RoleRegistry,
+    expectedRevision: number
+  ): Promise<RegistryCommitResult>;
+
+  /**
+   * Every role a whole-registry save persists: the registry's own roles plus
+   * the transitive closure of their parents, which may include roles that were
+   * attached with inheritsFrom() but never define()d on the registry.
+   *
+   * Both saveRegistry() and saveRegistryIfRevision() must agree on this set —
+   * if the conditional commit derived its keep-list from registry.getAll()
+   * alone, it would delete an unregistered parent that the save then re-creates
+   * with a fresh created_at, silently reordering summary results.
+   */
+  protected collectPersistedRoles(registry: RoleRegistry): Map<string, Role> {
+    const collected = new Map<string, Role>();
+
+    const collect = (role: Role) => {
+      if (collected.has(role.name)) {
+        return;
+      }
+      collected.set(role.name, role);
+      for (const parent of role.parents) {
+        collect(parent);
+      }
+    };
+
+    for (const role of registry.getAll()) {
+      collect(role);
+    }
+
+    return collected;
+  }
+
+  /**
+   * Hydrate the named roles, with direct rights and inheritance resolved,
+   * returning them in the order requested. Names absent from the registry are
+   * skipped rather than erroring.
+   *
+   * Routes through loadRegistrySnapshot() so every returned role comes from a
+   * single revision. Pass `revision` to assert that revision is still current;
+   * a mismatch throws RoleRegistryRevisionError instead of returning roles the
+   * caller would wrongly believe were consistent with an earlier read.
+   */
+  async loadRolesByName(names: string[], revision?: number): Promise<Role[]> {
+    const snapshot = await this.loadRegistrySnapshot();
+    if (revision !== undefined && snapshot.revision !== revision) {
+      throw new RoleRegistryRevisionError(revision, snapshot.revision);
+    }
+    return names.flatMap(name => {
+      const role = snapshot.registry.get(name);
+      return role ? [role] : [];
+    });
+  }
 
   /**
    * Load a single role with its full inheritance chain resolved.

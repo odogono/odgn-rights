@@ -13,6 +13,7 @@ export const createTableNames = (
 ): TableNames => ({
   rights: `${prefix}rights`,
   roleInheritance: `${prefix}role_inheritance`,
+  roleRegistryState: `${prefix}role_registry_state`,
   roleRights: `${prefix}role_rights`,
   roles: `${prefix}roles`,
   subjectRights: `${prefix}subject_rights`,
@@ -47,6 +48,12 @@ CREATE TABLE IF NOT EXISTS ${tables.roles} (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS ${tables.roleRegistryState} (
+  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+  revision INTEGER NOT NULL DEFAULT 0
+);
+INSERT OR IGNORE INTO ${tables.roleRegistryState} (singleton, revision) VALUES (1, 0);
 
 -- Role-Rights junction table
 CREATE TABLE IF NOT EXISTS ${tables.roleRights} (
@@ -126,6 +133,13 @@ CREATE TABLE IF NOT EXISTS ${tables.roles} (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS ${tables.roleRegistryState} (
+  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+  revision BIGINT NOT NULL DEFAULT 0
+);
+INSERT INTO ${tables.roleRegistryState} (singleton, revision) VALUES (1, 0)
+ON CONFLICT (singleton) DO NOTHING;
+
 -- Role-Rights junction table
 CREATE TABLE IF NOT EXISTS ${tables.roleRights} (
   role_id INTEGER NOT NULL REFERENCES ${tables.roles}(id) ON DELETE CASCADE,
@@ -177,6 +191,7 @@ DROP TABLE IF EXISTS ${tables.subjectRoles};
 DROP TABLE IF EXISTS ${tables.subjects};
 DROP TABLE IF EXISTS ${tables.roleInheritance};
 DROP TABLE IF EXISTS ${tables.roleRights};
+DROP TABLE IF EXISTS ${tables.roleRegistryState};
 DROP TABLE IF EXISTS ${tables.roles};
 DROP TABLE IF EXISTS ${tables.rights};
 `;
@@ -190,6 +205,7 @@ DROP TABLE IF EXISTS ${tables.subjectRoles} CASCADE;
 DROP TABLE IF EXISTS ${tables.subjects} CASCADE;
 DROP TABLE IF EXISTS ${tables.roleInheritance} CASCADE;
 DROP TABLE IF EXISTS ${tables.roleRights} CASCADE;
+DROP TABLE IF EXISTS ${tables.roleRegistryState} CASCADE;
 DROP TABLE IF EXISTS ${tables.roles} CASCADE;
 DROP TABLE IF EXISTS ${tables.rights} CASCADE;
 `;

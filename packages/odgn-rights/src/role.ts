@@ -31,6 +31,24 @@ export class Role {
   }
 
   /**
+   * Remove a single parent role relationship.
+   * @returns This role, whether or not the parent was present.
+   */
+  removeParent(role: Role): this {
+    const idx = this.parents.indexOf(role);
+    if (idx === -1) {
+      return this;
+    }
+    this.parents.splice(idx, 1);
+    const childIdx = role.children.indexOf(this);
+    if (childIdx !== -1) {
+      role.children.splice(childIdx, 1);
+    }
+    this.invalidateCache();
+    return this;
+  }
+
+  /**
    * Clear all parent role relationships.
    * Useful when setting a new inheritance list.
    */

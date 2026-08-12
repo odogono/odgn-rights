@@ -449,7 +449,10 @@ await adapter.saveRights(rights);
 const loaded = await adapter.loadRights();
 loaded.has('/users/123', Flags.READ); // true
 
-// Save and load roles
+// Save and load roles.
+// saveTo() is an unconditional write — fine for a single writer like this
+// example. Where writers can overlap, use the revision-aware pattern in
+// "Concurrent Role Registry Writes" below instead.
 const { Role, RoleRegistry } = await import('odgn-rights');
 const registry = new RoleRegistry();
 const admin = registry.define('admin');
@@ -526,6 +529,7 @@ const { adapter: regAdapter, registry } = await createSQLiteRegistry({
 });
 const viewer = registry.define('viewer');
 viewer.rights.allow('/read/*', Flags.READ);
+// Single-writer convenience; see "Concurrent Role Registry Writes" below.
 await registry.saveTo(regAdapter);
 await regAdapter.disconnect();
 ```
@@ -560,28 +564,77 @@ All adapters implement the `DatabaseAdapter` interface:
 | `saveRole(role)`                   | Save a role with its rights       |
 | `loadRole(name)`                   | Load a role by name               |
 | `loadRoles()`                      | Load all roles                    |
+| `loadRoleSummaries(query?)`        | List role summaries + revision    |
+| `loadRolesByName(names, rev?)`     | Batch-hydrate roles, in order     |
 | `deleteRole(name)`                 | Delete a role                     |
 | `saveRegistry(registry)`           | Save entire RoleRegistry          |
 | `loadRegistry()`                   | Load RoleRegistry with all roles  |
+| `loadRegistrySnapshot()`           | Load RoleRegistry + revision      |
+| `saveRegistryIfRevision(reg, rev)` | Conditional whole-registry commit |
 | `saveSubject(identifier, subject)` | Save a subject                    |
 | `loadSubject(identifier)`          | Load a subject                    |
 | `deleteSubject(identifier)`        | Delete a subject                  |
 | `clear()`                          | Clear all data (for testing)      |
 | `transaction(fn)`                  | Execute operations in transaction |
 
+### Concurrent Role Registry Writes
+
+Every whole-registry save advances a persisted **revision**, so concurrent
+writers can detect that they are working from stale data instead of silently
+overwriting each other. The pattern is read-modify-commit:
+
+```ts
+const { registry, revision } = await adapter.loadRegistrySnapshot();
+
+registry.define('editor', new Rights().allow('/docs', Flags.WRITE));
+registry.delete('legacy-role');
+
+const result = await adapter.saveRegistryIfRevision(registry, revision);
+if (!result.committed) {
+  // Someone else committed first; result.revision is the current revision.
+  // Re-read the snapshot, re-apply, and retry.
+}
+```
+
+`saveRegistryIfRevision` is atomic against competing writers on all three
+backends, and it deletes roles absent from the registry you pass — unlike
+`saveRegistry`, which is an unconditional upsert that never removes roles.
+
+To list roles without hydrating rights and inheritance, use summaries, then
+batch-hydrate only the roles you need against the same revision:
+
+```ts
+const { items, revision } = await adapter.loadRoleSummaries({ name: 'ed' });
+// items: [{ name, createdAt, updatedAt }], case-insensitive substring match on
+// name, ordered by createdAt then name.
+
+const roles = await adapter.loadRolesByName(
+  items.map(item => item.name),
+  revision
+);
+// Returns roles in the order requested. Throws RoleRegistryRevisionError if the
+// registry moved on, so you never mix data from two revisions.
+```
+
+`saveRole` and `deleteRole` are revision-blind: they neither check nor advance
+the revision, so a concurrent conditional commit cannot see them. They are
+deprecated for production use — route role writes through
+`saveRegistryIfRevision` instead.
+
 ### Database Schema
 
 The adapters create the following tables (with the configured prefix):
 
-| Table                      | Purpose                              |
-| -------------------------- | ------------------------------------ |
-| `{prefix}rights`           | Individual rights with paths & flags |
-| `{prefix}roles`            | Role definitions                     |
-| `{prefix}role_rights`      | Role-to-rights mapping               |
-| `{prefix}role_inheritance` | Role inheritance relationships       |
-| `{prefix}subjects`         | Subject records                      |
-| `{prefix}subject_roles`    | Subject-to-roles mapping             |
-| `{prefix}subject_rights`   | Direct subject rights                |
+| Table                         | Purpose                              |
+| ----------------------------- | ------------------------------------ |
+| `{prefix}rights`              | Individual rights with paths & flags |
+| `{prefix}role_registry_state` | Registry revision counter            |
+| `{prefix}roles`               | Role definitions                     |
+| `{prefix}role_rights`         | Role-to-rights mapping               |
+| `{prefix}role_inheritance`    | Role inheritance relationships       |
+| `{prefix}subjects`            | Subject records                      |
+| `{prefix}subject_roles`       | Subject-to-roles mapping             |
+| `{prefix}subject_rights`      | Direct subject rights                |
 
 ### Persistence Metadata
 

@@ -191,6 +191,126 @@ describe('SQLiteAdapter', () => {
       const editorRights = editorRole!.allRights();
       expect(editorRights.length).toBeGreaterThan(0);
     });
+
+    test('queries stable role summaries and hydrates an ordered batch', async () => {
+      const { RoleRegistry } = await import('../../index');
+      const registry = new RoleRegistry();
+      registry.define('Zulu');
+      registry.define('alpha');
+      registry.define('Alpine');
+      await adapter.saveRegistry(registry);
+
+      const page = await adapter.loadRoleSummaries({ name: 'al' });
+      expect(page.revision).toBeGreaterThan(0);
+      expect(page.items.map(item => item.name)).toEqual(['alpha', 'Alpine']);
+      expect(page.items[0]?.createdAt).toBeString();
+
+      const roles = await adapter.loadRolesByName(
+        ['Alpine', 'alpha'],
+        page.revision
+      );
+      expect(roles.map(role => role.name)).toEqual(['Alpine', 'alpha']);
+    });
+
+    test('conditionally commits a registry snapshot once', async () => {
+      const first = await adapter.loadRegistrySnapshot();
+      const second = await adapter.loadRegistrySnapshot();
+      first.registry.define('first-writer');
+      second.registry.define('stale-writer');
+
+      const committed = await adapter.saveRegistryIfRevision(
+        first.registry,
+        first.revision
+      );
+      const stale = await adapter.saveRegistryIfRevision(
+        second.registry,
+        second.revision
+      );
+
+      expect(committed).toEqual({ committed: true, revision: 1 });
+      expect(stale).toEqual({ committed: false, revision: 1 });
+      expect((await adapter.loadRegistry()).get('first-writer')).toBeDefined();
+      expect(
+        (await adapter.loadRegistry()).get('stale-writer')
+      ).toBeUndefined();
+    });
+
+    test('conditionally committing a snapshot removes deleted roles', async () => {
+      const { RoleRegistry } = await import('../../index');
+      const registry = new RoleRegistry();
+      registry.define('keep');
+      registry.define('remove');
+      await adapter.saveRegistry(registry);
+
+      const snapshot = await adapter.loadRegistrySnapshot();
+      expect(snapshot.registry.delete('remove')).toBe(true);
+      expect(
+        await adapter.saveRegistryIfRevision(
+          snapshot.registry,
+          snapshot.revision
+        )
+      ).toEqual({ committed: true, revision: snapshot.revision + 1 });
+
+      expect((await adapter.loadRegistry()).get('keep')).toBeDefined();
+      expect((await adapter.loadRegistry()).get('remove')).toBeUndefined();
+    });
+
+    test('conditional commit keeps parents that were never defined on the registry', async () => {
+      const { Role, RoleRegistry, Subject } = await import('../../index');
+      const seed = new RoleRegistry();
+      seed.define('base', new Rights().allow('/base', Flags.READ));
+      seed.define('child').inheritsFrom(seed.get('base')!);
+      await adapter.saveRegistry(seed);
+
+      const member = new Subject().memberOf(seed.get('base')!);
+      await adapter.saveSubject('member', member);
+
+      // A registry whose only defined role inherits from an undefined parent.
+      // saveRegistry persists that parent, so the conditional commit must not
+      // treat it as deleted: deleting and re-inserting it strands every row
+      // keyed on the old role id, silently unassigning the subject.
+      const detached = new RoleRegistry();
+      const orphanParent = new Role(
+        'base',
+        new Rights().allow('/base', Flags.READ)
+      );
+      detached.define('child').inheritsFrom(orphanParent);
+
+      const snapshot = await adapter.loadRegistrySnapshot();
+      expect(
+        await adapter.saveRegistryIfRevision(detached, snapshot.revision)
+      ).toEqual({ committed: true, revision: snapshot.revision + 1 });
+
+      expect(
+        (await adapter.loadRoleSummaries({ name: 'base' })).items.map(
+          item => item.name
+        )
+      ).toEqual(['base']);
+      const reloaded = await adapter.loadSubject('member');
+      expect(reloaded?.read('/base')).toBe(true);
+    });
+
+    test('filters summaries case-insensitively for non-ASCII names', async () => {
+      const { RoleRegistry } = await import('../../index');
+      const registry = new RoleRegistry();
+      registry.define('Éditeur');
+      registry.define('Ingeniør');
+      registry.define('plain');
+      await adapter.saveRegistry(registry);
+
+      // SQLite's lower() folds ASCII only, so this must be matched in JS to
+      // stay consistent with the PostgreSQL and Redis adapters.
+      expect(
+        (await adapter.loadRoleSummaries({ name: 'éditeur' })).items.map(
+          item => item.name
+        )
+      ).toEqual(['Éditeur']);
+      expect(
+        (await adapter.loadRoleSummaries({ name: 'INGENIØR' })).items.map(
+          item => item.name
+        )
+      ).toEqual(['Ingeniør']);
+    });
   });
 
   describe('Subject operations', () => {

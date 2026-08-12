@@ -35,6 +35,24 @@ export class RoleRegistry {
     return Array.from(this.roles.values());
   }
 
+  /**
+   * Remove a role and every inheritance edge touching it, in both directions.
+   */
+  delete(name: string): boolean {
+    const removed = this.roles.get(name);
+    if (!removed) {
+      return false;
+    }
+    this.roles.delete(name);
+    for (const role of this.roles.values()) {
+      role.removeParent(removed);
+    }
+    // Detach the removed role from its own parents too, so it does not linger
+    // in their children lists holding the registry's live roles reachable.
+    removed.clearParents();
+    return true;
+  }
+
   toJSON(): RoleJSON[] {
     return this.getAll().map(r => r.toJSON());
   }
@@ -47,7 +65,13 @@ export class RoleRegistry {
   }
 
   /**
-   * Save all roles and their relationships to a database adapter
+   * Save all roles and their relationships to a database adapter.
+   *
+   * Single-writer only: this delegates to the unconditional saveRegistry(), so
+   * it neither checks the revision nor removes roles absent from this
+   * registry.
+   * @deprecated Where writers can overlap, use adapter.loadRegistrySnapshot()
+   * and adapter.saveRegistryIfRevision() instead.
    */
   async saveTo(adapter: DatabaseAdapter): Promise<void> {
     await adapter.saveRegistry(this);

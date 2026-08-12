@@ -11,7 +11,12 @@ import type {
   DatabaseAdapter,
   PaginatedResult,
   PaginationOptions,
+  RegistryCommitResult,
+  RevisionedRoleSummaries,
   RightsRow,
+  RoleRegistrySnapshot,
+  RoleSummary,
+  RoleSummaryQuery,
   SubjectWithIdentifier
 } from './types';
 
@@ -22,6 +27,16 @@ export type RedisAdapterOptions = BaseAdapterOptions & {
   lazyConnect?: boolean;
   password?: string;
   port?: number;
+  /**
+   * How long the registry write lock is held before Redis expires it.
+   * Must exceed the slowest expected registry commit. Defaults to 30s.
+   */
+  registryLockTtlMs?: number;
+  /**
+   * How long to keep waiting for the registry write lock before throwing.
+   * Defaults to registryLockTtlMs, so a caller waits out one full holder.
+   */
+  registryLockWaitMs?: number;
   tls?: object;
   url?: string;
 };
@@ -120,6 +135,7 @@ export class RedisAdapter extends BaseAdapter {
       throw new Error('Not connected');
     }
     await this.redis.ping();
+    await this.redis.setnx(this.key('roles', '_revision'), '0');
   }
 
   // ===========================================================================
@@ -364,6 +380,56 @@ export class RedisAdapter extends BaseAdapter {
     return registry.getAll();
   }
 
+  async loadRoleSummaries(
+    query: RoleSummaryQuery = {}
+  ): Promise<RevisionedRoleSummaries> {
+    return this.withRegistryLock(async () => {
+      const names = await this.redis!.smembers(this.key('roles', '_all'));
+      const needle = query.name?.trim().toLocaleLowerCase() ?? '';
+      const matching = needle
+        ? names.filter(name => name.toLocaleLowerCase().includes(needle))
+        : names;
+
+      // Batch the per-role reads into one round trip, as loadSubjects does.
+      const rolesPipeline = this.redis!.pipeline();
+      for (const name of matching) {
+        rolesPipeline.hgetall(this.key('roles', name));
+      }
+      const rolesResults = await rolesPipeline.exec();
+
+      const items: RoleSummary[] = [];
+      for (let i = 0; i < matching.length; i++) {
+        const name = matching[i]!;
+        const result = rolesResults?.[i];
+        if (!result || result[0]) {
+          continue;
+        }
+        const role = result[1] as Record<string, string>;
+        if (role?.created_at && role?.updated_at) {
+          items.push({
+            createdAt: new Date(role.created_at).toISOString(),
+            name,
+            updatedAt: new Date(role.updated_at).toISOString()
+          });
+        }
+      }
+      items.sort(
+        (left, right) =>
+          left.createdAt.localeCompare(right.createdAt) ||
+          left.name.localeCompare(right.name, undefined, {
+            sensitivity: 'base'
+          }) ||
+          left.name.localeCompare(right.name)
+      );
+      return {
+        items,
+        revision: Number(
+          (await this.redis!.get(this.key('roles', '_revision'))) ?? 0
+        )
+      };
+    });
+  }
+
   async deleteRole(name: string): Promise<boolean> {
     if (!this.redis) {
       throw new Error('Not connected');
@@ -395,28 +461,52 @@ export class RedisAdapter extends BaseAdapter {
       throw new Error('Not connected');
     }
 
-    await this.transaction(async () => {
-      const rolesToSave = new Map<string, Role>();
+    await this.withRegistryLock(async () => {
+      await this.saveRegistryContents(registry);
+      await this.redis!.incr(this.key('roles', '_revision'));
+    });
+  }
 
-      const collectRoles = (role: Role) => {
-        if (!rolesToSave.has(role.name)) {
-          rolesToSave.set(role.name, role);
-          for (const parent of role.parents) {
-            collectRoles(parent);
-          }
-        }
-      };
+  private async saveRegistryContents(registry: RoleRegistry): Promise<void> {
+    for (const role of this.collectPersistedRoles(registry).values()) {
+      await this.saveRole(role);
+    }
+  }
 
-      registry.toJSON().forEach(roleJson => {
-        const role = registry.get(roleJson.name);
-        if (role) {
-          collectRoles(role);
-        }
-      });
+  async loadRegistrySnapshot(): Promise<RoleRegistrySnapshot> {
+    return this.withRegistryLock(async () => ({
+      registry: await this.loadRegistry(),
+      revision: Number(
+        (await this.redis!.get(this.key('roles', '_revision'))) ?? 0
+      )
+    }));
+  }
 
-      for (const role of rolesToSave.values()) {
-        await this.saveRole(role);
+  async saveRegistryIfRevision(
+    registry: RoleRegistry,
+    expectedRevision: number
+  ): Promise<RegistryCommitResult> {
+    return this.withRegistryLock(async () => {
+      const revision = Number(
+        (await this.redis!.get(this.key('roles', '_revision'))) ?? 0
+      );
+      if (revision !== expectedRevision) {
+        return { committed: false, revision };
       }
+      const nextNames = new Set(this.collectPersistedRoles(registry).keys());
+      const currentNames = await this.redis!.smembers(
+        this.key('roles', '_all')
+      );
+      for (const currentName of currentNames) {
+        if (!nextNames.has(currentName)) {
+          await this.deleteRole(currentName);
+        }
+      }
+      await this.saveRegistryContents(registry);
+      const nextRevision = await this.redis!.incr(
+        this.key('roles', '_revision')
+      );
+      return { committed: true, revision: nextRevision };
     });
   }
 
@@ -800,6 +890,67 @@ export class RedisAdapter extends BaseAdapter {
   // ===========================================================================
   // Utility
   // ===========================================================================
+
+  /**
+   * Serialize registry-wide reads and commits behind a single-holder lock, so
+   * summaries and snapshots cannot pair role data with the wrong revision.
+   * Release is token-guarded, so a holder never deletes someone else's lock.
+   *
+   * Waits up to registryLockWaitMs, which defaults to the lock TTL so a caller
+   * outlasts one full holder rather than giving up while the lock is still
+   * legitimately held. Backs off between attempts and throws once the budget
+   * is spent.
+   *
+   * Two limits worth knowing. The lock is **not reentrant**: calling a
+   * lock-taking method from inside another one will block until the wait
+   * budget is spent and then throw, so internal callers must use the unlocked
+   * helpers (saveRegistryContents, not saveRegistry). And it has no fencing
+   * token, so a body that overruns the TTL can proceed alongside the next
+   * holder — size registryLockTtlMs above your slowest commit. The
+   * revision-blind saveRole()/deleteRole() paths do not take it at all.
+   */
+  private async withRegistryLock<T>(fn: () => Promise<T>): Promise<T> {
+    if (!this.redis) {
+      throw new Error('Not connected');
+    }
+    const lockKey = this.key('roles', '_write_lock');
+    const token = crypto.randomUUID();
+    const ttlMs = this.options.registryLockTtlMs ?? 30_000;
+    const waitMs = this.options.registryLockWaitMs ?? ttlMs;
+
+    let acquired = false;
+    let waited = 0;
+    let backoffMs = 10;
+    for (;;) {
+      acquired =
+        (await this.redis.set(lockKey, token, 'PX', ttlMs, 'NX')) === 'OK';
+      if (acquired || waited >= waitMs) {
+        break;
+      }
+      const delay = Math.min(backoffMs, waitMs - waited);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      waited += delay;
+      backoffMs = Math.min(backoffMs * 2, 250);
+    }
+    if (!acquired) {
+      throw new Error(
+        `Timed out acquiring the role registry write lock after ${waitMs}ms`
+      );
+    }
+    try {
+      return await fn();
+    } finally {
+      await this.redis.eval(
+        `if redis.call('get', KEYS[1]) == ARGV[1] then
+           return redis.call('del', KEYS[1])
+         end
+         return 0`,
+        1,
+        lockKey,
+        token
+      );
+    }
+  }
 
   async clear(): Promise<void> {
     if (!this.redis) {

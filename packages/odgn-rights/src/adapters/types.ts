@@ -85,6 +85,50 @@ export type SubjectWithIdentifier = {
   subject: Subject;
 };
 
+/**
+ * A portable role record for listing without hydrating rights or inheritance.
+ * Timestamps are ISO-8601 strings so they survive transport unchanged.
+ */
+export type RoleSummary = {
+  createdAt: string;
+  name: string;
+  updatedAt: string;
+};
+
+/**
+ * Filter for role summary queries. `name` matches case-insensitively as a
+ * substring; omitted or blank returns every role.
+ */
+export type RoleSummaryQuery = {
+  name?: string;
+};
+
+/**
+ * Role summaries paired with the registry revision they were read at, so a
+ * caller can pass that revision back to saveRegistryIfRevision().
+ */
+export type RevisionedRoleSummaries = {
+  items: RoleSummary[];
+  revision: number;
+};
+
+/**
+ * A fully hydrated registry paired with the revision it was read at.
+ */
+export type RoleRegistrySnapshot = {
+  registry: RoleRegistry;
+  revision: number;
+};
+
+/**
+ * Outcome of a conditional registry commit. When `committed` is false the
+ * revision is the current persisted one, which the caller can retry against.
+ */
+export type RegistryCommitResult = {
+  committed: boolean;
+  revision: number;
+};
+
 // ============================================================================
 // Adapter Configuration Types
 // ============================================================================
@@ -106,6 +150,7 @@ export type BaseAdapterOptions = {
 export type TableNames = {
   rights: string;
   roleInheritance: string;
+  roleRegistryState: string;
   roleRights: string;
   roles: string;
   subjectRights: string;
@@ -148,8 +193,13 @@ export type DatabaseAdapter = {
   // -------------------------------------------------------------------------
 
   /**
-   * Delete a role by name
+   * Delete a role by name.
+   *
+   * This write is revision-blind: it neither checks nor advances the registry
+   * revision, so it is invisible to a concurrent compare-and-swap commit.
    * @returns true if the role was deleted, false if not found
+   * @deprecated Production callers should delete via RoleRegistry.delete() and
+   * saveRegistryIfRevision(), so the change goes through concurrency control.
    */
   deleteRole(name: string): Promise<boolean>;
 
@@ -176,6 +226,12 @@ export type DatabaseAdapter = {
    * Load all roles into a new RoleRegistry
    */
   loadRegistry(): Promise<RoleRegistry>;
+
+  /**
+   * Load every role together with the revision the read was taken at.
+   * Pass that revision to saveRegistryIfRevision() to commit conditionally.
+   */
+  loadRegistrySnapshot(): Promise<RoleRegistrySnapshot>;
 
   /**
    * Load a right by its database ID
@@ -206,6 +262,21 @@ export type DatabaseAdapter = {
    * Load all roles from the database
    */
   loadRoles(): Promise<Role[]>;
+
+  /**
+   * Hydrate the named roles — direct rights and inheritance included — in the
+   * order requested, skipping names that are not present.
+   * @param revision When given, throws RoleRegistryRevisionError if the
+   * persisted revision has moved on, so callers cannot mix revisions
+   */
+  loadRolesByName(names: string[], revision?: number): Promise<Role[]>;
+
+  /**
+   * List role summaries, ordered by createdAt then name, paired with the
+   * current registry revision.
+   * @param query Optional case-insensitive substring filter on name
+   */
+  loadRoleSummaries(query?: RoleSummaryQuery): Promise<RevisionedRoleSummaries>;
 
   // -------------------------------------------------------------------------
   // RoleRegistry Operations
@@ -246,9 +317,26 @@ export type DatabaseAdapter = {
   // -------------------------------------------------------------------------
 
   /**
-   * Save an entire role registry to the database
+   * Save an entire role registry to the database, advancing the revision.
+   *
+   * Note this is an unconditional upsert: it does not check the revision, and
+   * it does not remove roles absent from `registry`.
+   * @deprecated Prefer saveRegistryIfRevision(), which enforces the revision
+   * check. Unconditional saves let concurrent writers overwrite each other.
    */
   saveRegistry(registry: RoleRegistry): Promise<void>;
+
+  /**
+   * Commit the whole registry only if the persisted revision still matches
+   * `expectedRevision`, deleting roles absent from `registry`. Atomic against
+   * competing writers on every backend.
+   * @returns `{ committed: true, revision }` with the new revision on success;
+   * `{ committed: false, revision }` with the current revision if stale
+   */
+  saveRegistryIfRevision(
+    registry: RoleRegistry,
+    expectedRevision: number
+  ): Promise<RegistryCommitResult>;
 
   /**
    * Save a single right to the database
@@ -267,8 +355,13 @@ export type DatabaseAdapter = {
   // -------------------------------------------------------------------------
 
   /**
-   * Save a role and its rights to the database
+   * Save a role and its rights to the database.
+   *
+   * This write is revision-blind: it neither checks nor advances the registry
+   * revision, so it is invisible to a concurrent compare-and-swap commit.
    * @returns The database ID of the saved role
+   * @deprecated Production callers should mutate a registry snapshot and commit
+   * it with saveRegistryIfRevision(), so the write is revision-checked.
    */
   saveRole(role: Role): Promise<number>;
 

@@ -12,10 +12,14 @@ import type {
   DatabaseAdapter,
   PaginatedResult,
   PaginationOptions,
+  RegistryCommitResult,
+  RevisionedRoleSummaries,
   RightsRow,
   RoleInheritanceRow,
+  RoleRegistrySnapshot,
   RoleRightRow,
   RoleRow,
+  RoleSummaryQuery,
   SubjectRightRow,
   SubjectRoleRow,
   SubjectRow,
@@ -312,6 +316,48 @@ export class SQLiteAdapter extends BaseAdapter {
     return registry.getAll();
   }
 
+  async loadRoleSummaries(
+    query: RoleSummaryQuery = {}
+  ): Promise<RevisionedRoleSummaries> {
+    if (!this.db) {
+      throw new Error('Not connected');
+    }
+    const { roleRegistryState, roles } = this.tables;
+    const needle = query.name?.trim().toLocaleLowerCase() ?? '';
+    // Read the rows and the revision in one transaction, so a competing
+    // writer cannot commit between them and leave the caller holding stale
+    // summaries stamped with the revision that replaced them.
+    return this.transaction(async () => {
+      // SQLite's lower() folds ASCII only, so filtering in SQL would miss
+      // Unicode case variants that PostgreSQL's LOWER() and the Redis
+      // adapter's JS folding both match. Filter in JS instead, using the same
+      // folding as the needle, so all three backends agree.
+      const allRows = this.db!.query(
+        `SELECT name, created_at, updated_at
+         FROM ${roles}
+         ORDER BY created_at, name COLLATE NOCASE, name`
+      ).all() as Array<{
+        created_at: string;
+        name: string;
+        updated_at: string;
+      }>;
+      const rows = needle
+        ? allRows.filter(row => row.name.toLocaleLowerCase().includes(needle))
+        : allRows;
+      const state = this.db!.query(
+        `SELECT revision FROM ${roleRegistryState} WHERE singleton = 1`
+      ).get() as { revision: number } | undefined;
+      return {
+        items: rows.map(row => ({
+          createdAt: new Date(`${row.created_at}Z`).toISOString(),
+          name: row.name,
+          updatedAt: new Date(`${row.updated_at}Z`).toISOString()
+        })),
+        revision: state?.revision ?? 0
+      };
+    });
+  }
+
   async deleteRole(name: string): Promise<boolean> {
     if (!this.db || !this.stmtDeleteRole) {
       throw new Error('Not connected');
@@ -338,27 +384,46 @@ export class SQLiteAdapter extends BaseAdapter {
     }
 
     await this.transaction(async () => {
-      const rolesToSave = new Map<string, Role>();
-
-      const collectRoles = (role: Role) => {
-        if (!rolesToSave.has(role.name)) {
-          rolesToSave.set(role.name, role);
-          for (const parent of role.parents) {
-            collectRoles(parent);
-          }
-        }
-      };
-
-      registry.toJSON().forEach(roleJson => {
-        const role = registry.get(roleJson.name);
-        if (role) {
-          collectRoles(role);
-        }
-      });
-
-      for (const role of rolesToSave.values()) {
+      for (const role of this.collectPersistedRoles(registry).values()) {
         await this.saveRole(role);
       }
+      this.db!.run(
+        `UPDATE ${this.tables.roleRegistryState} SET revision = revision + 1 WHERE singleton = 1`
+      );
+    });
+  }
+
+  async loadRegistrySnapshot(): Promise<RoleRegistrySnapshot> {
+    return this.transaction(async () => {
+      const registry = await this.loadRegistry();
+      const state = this.db!.query(
+        `SELECT revision FROM ${this.tables.roleRegistryState} WHERE singleton = 1`
+      ).get() as { revision: number } | undefined;
+      return { registry, revision: state?.revision ?? 0 };
+    });
+  }
+
+  async saveRegistryIfRevision(
+    registry: RoleRegistry,
+    expectedRevision: number
+  ): Promise<RegistryCommitResult> {
+    return this.transaction(async () => {
+      const state = this.db!.query(
+        `SELECT revision FROM ${this.tables.roleRegistryState} WHERE singleton = 1`
+      ).get() as { revision: number } | undefined;
+      const revision = state?.revision ?? 0;
+      if (revision !== expectedRevision) {
+        return { committed: false, revision };
+      }
+      const nextNames = new Set(this.collectPersistedRoles(registry).keys());
+      const currentNames = this.stmtSelectAllRoles!.all() as RoleRow[];
+      for (const current of currentNames) {
+        if (!nextNames.has(current.name)) {
+          await this.deleteRole(current.name);
+        }
+      }
+      await this.saveRegistry(registry);
+      return { committed: true, revision: expectedRevision + 1 };
     });
   }
 

@@ -1,6 +1,6 @@
 {
   "name": "odgn-rights",
-  "version": "0.6.4",
+  "version": "0.7.0",
   "description": "TypeScript library for expressing and evaluating hierarchical rights with simple glob patterns.",
   "keywords": [
     "rights",
@@ -65,7 +65,7 @@
   "devDependencies": {
     "@testcontainers/postgresql": "^11.11.0",
     "@testcontainers/valkey": "^11.11.0",
-    "@types/bun": "latest",
+    "@types/bun": "1.3.14",
     "elysia": "^1.4.21",
     "testcontainers": "^11.11.0"
   },
