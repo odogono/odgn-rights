@@ -35,6 +35,21 @@ export class RoleRegistry {
     return Array.from(this.roles.values());
   }
 
+  /**
+   * Remove a role and any inheritance edges that point to it.
+   */
+  delete(name: string): boolean {
+    const removed = this.roles.get(name);
+    if (!removed) {
+      return false;
+    }
+    this.roles.delete(name);
+    for (const role of this.roles.values()) {
+      role.removeParent(removed);
+    }
+    return true;
+  }
+
   toJSON(): RoleJSON[] {
     return this.getAll().map(r => r.toJSON());
   }

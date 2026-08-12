@@ -471,3 +471,91 @@ describe('Role.clearParents', () => {
     expect(parent.allRights()).toHaveLength(2);
   });
 });
+
+describe('Role.removeParent', () => {
+  it('removes only the named parent, keeping the others in order', () => {
+    const parent1 = new Role('parent1', new Rights().allow('/a', Flags.READ));
+    const parent2 = new Role('parent2', new Rights().allow('/b', Flags.READ));
+    const parent3 = new Role('parent3', new Rights().allow('/c', Flags.READ));
+    const child = new Role('child');
+
+    child.inheritsFrom(parent1);
+    child.inheritsFrom(parent2);
+    child.inheritsFrom(parent3);
+
+    child.removeParent(parent2);
+
+    expect(child.parents).toEqual([parent1, parent3]);
+    expect(child.allRights()).toHaveLength(2);
+  });
+
+  it('is a no-op for a role that is not a parent', () => {
+    const parent = new Role('parent');
+    const stranger = new Role('stranger');
+    const child = new Role('child');
+    child.inheritsFrom(parent);
+
+    child.removeParent(stranger);
+
+    expect(child.parents).toEqual([parent]);
+  });
+
+  it('lets the removed parent be re-attached', () => {
+    const parent = new Role('parent', new Rights().allow('/a', Flags.READ));
+    const child = new Role('child');
+    child.inheritsFrom(parent);
+
+    child.removeParent(parent);
+    expect(child.allRights()).toHaveLength(0);
+
+    child.inheritsFrom(parent);
+    expect(child.allRights()).toHaveLength(1);
+  });
+});
+
+describe('RoleRegistry.delete', () => {
+  it('removes the role and the inheritance edges pointing at it', () => {
+    const registry = new RoleRegistry();
+    const base = registry.define('base', new Rights().allow('/a', Flags.READ));
+    const middle = registry.define(
+      'middle',
+      new Rights().allow('/b', Flags.READ)
+    );
+    const leaf = registry.define('leaf', new Rights().allow('/c', Flags.READ));
+    middle.inheritsFrom(base);
+    leaf.inheritsFrom(middle);
+
+    expect(registry.delete('middle')).toBe(true);
+
+    expect(registry.get('middle')).toBeUndefined();
+    expect(registry.getAll().map(role => role.name)).toEqual(['base', 'leaf']);
+    // leaf loses the edge to middle, and with it middle's inherited rights
+    expect(leaf.parents).toHaveLength(0);
+    expect(leaf.allRights()).toHaveLength(1);
+  });
+
+  it('leaves unrelated inheritance intact', () => {
+    const registry = new RoleRegistry();
+    const base = registry.define('base', new Rights().allow('/a', Flags.READ));
+    const other = registry.define(
+      'other',
+      new Rights().allow('/b', Flags.READ)
+    );
+    const leaf = registry.define('leaf');
+    leaf.inheritsFrom(base);
+    leaf.inheritsFrom(other);
+
+    registry.delete('other');
+
+    expect(leaf.parents).toEqual([base]);
+    expect(leaf.allRights()).toHaveLength(1);
+  });
+
+  it('returns false for an unknown role', () => {
+    const registry = new RoleRegistry();
+    registry.define('base');
+
+    expect(registry.delete('nope')).toBe(false);
+    expect(registry.getAll()).toHaveLength(1);
+  });
+});

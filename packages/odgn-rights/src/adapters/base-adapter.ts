@@ -4,13 +4,18 @@ import { Rights } from '../rights';
 import { Role } from '../role';
 import { RoleRegistry } from '../role-registry';
 import { Subject } from '../subject';
+import { RoleRegistryRevisionError } from './errors';
 import { DEFAULT_TABLE_PREFIX, createTableNames } from './schema';
 import type {
   BaseAdapterOptions,
   DatabaseAdapter,
   PaginatedResult,
   PaginationOptions,
+  RegistryCommitResult,
+  RevisionedRoleSummaries,
   RightsRow,
+  RoleRegistrySnapshot,
+  RoleSummaryQuery,
   SubjectWithIdentifier,
   TableNames
 } from './types';
@@ -164,10 +169,39 @@ export abstract class BaseAdapter implements DatabaseAdapter {
 
   abstract saveRole(role: Role): Promise<number>;
   abstract loadRoles(): Promise<Role[]>;
+  abstract loadRoleSummaries(
+    query?: RoleSummaryQuery
+  ): Promise<RevisionedRoleSummaries>;
   abstract deleteRole(name: string): Promise<boolean>;
 
   abstract saveRegistry(registry: RoleRegistry): Promise<void>;
   abstract loadRegistry(): Promise<RoleRegistry>;
+  abstract loadRegistrySnapshot(): Promise<RoleRegistrySnapshot>;
+  abstract saveRegistryIfRevision(
+    registry: RoleRegistry,
+    expectedRevision: number
+  ): Promise<RegistryCommitResult>;
+
+  /**
+   * Hydrate the named roles, with direct rights and inheritance resolved,
+   * returning them in the order requested. Names absent from the registry are
+   * skipped rather than erroring.
+   *
+   * Routes through loadRegistrySnapshot() so every returned role comes from a
+   * single revision. Pass `revision` to assert that revision is still current;
+   * a mismatch throws RoleRegistryRevisionError instead of returning roles the
+   * caller would wrongly believe were consistent with an earlier read.
+   */
+  async loadRolesByName(names: string[], revision?: number): Promise<Role[]> {
+    const snapshot = await this.loadRegistrySnapshot();
+    if (revision !== undefined && snapshot.revision !== revision) {
+      throw new RoleRegistryRevisionError(revision, snapshot.revision);
+    }
+    return names.flatMap(name => {
+      const role = snapshot.registry.get(name);
+      return role ? [role] : [];
+    });
+  }
 
   /**
    * Load a single role with its full inheritance chain resolved.

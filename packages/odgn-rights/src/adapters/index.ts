@@ -2,10 +2,15 @@
 export type {
   BaseAdapterOptions,
   DatabaseAdapter,
+  RegistryCommitResult,
+  RevisionedRoleSummaries,
   RightsRow,
   RoleInheritanceRow,
   RoleRightRow,
   RoleRow,
+  RoleRegistrySnapshot,
+  RoleSummary,
+  RoleSummaryQuery,
   SubjectRightRow,
   SubjectRoleRow,
   SubjectRow,
@@ -24,6 +29,7 @@ export {
 
 // Base adapter
 export { BaseAdapter } from './base-adapter';
+export { RoleRegistryRevisionError } from './errors';
 
 // SQLite adapter
 export { SQLiteAdapter } from './sqlite-adapter';

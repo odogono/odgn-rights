@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.7.0 - 2026-08-12
+
+### Added
+
+- Database adapters now expose stable role summaries, batch role hydration,
+  revisioned registry snapshots, and compare-and-swap registry commits across
+  PostgreSQL, SQLite, and Redis.
+- `RoleRegistry.delete()` removes a role together with inheritance edges that
+  reference it.
+
+### Changed
+
+- Whole-registry saves now advance a persisted registry revision, while
+  conditional commits replace deleted roles atomically and report stale
+  revisions explicitly.
+- PostgreSQL registry summaries, snapshots, and saves coordinate through the
+  revision row, and Redis registry operations use a distributed lock,
+  preventing readers from pairing role data with the wrong revision.
+
+### Deprecated
+
+- `DatabaseAdapter.saveRole()`, `deleteRole()`, and `saveRegistry()` are
+  revision-blind and invisible to conditional commits. Route production role
+  writes through `loadRegistrySnapshot()` + `saveRegistryIfRevision()`.
+
+### Notes for adapter implementers
+
+- `DatabaseAdapter` gains four required methods — `loadRoleSummaries()`,
+  `loadRolesByName()`, `loadRegistrySnapshot()`, and
+  `saveRegistryIfRevision()`. Adapters extending `BaseAdapter` inherit
+  `loadRolesByName()`; the other three must be implemented. External
+  implementations of the bare interface are a breaking change.
+
 ## 0.6.4 - 2026-08-01
 
 ### Fixed

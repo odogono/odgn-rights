@@ -198,6 +198,37 @@ describe('RedisAdapter', () => {
       const editorRights = editorRole!.allRights();
       expect(editorRights.length).toBeGreaterThan(0);
     });
+
+    test('queries summaries and rejects a stale registry commit', async () => {
+      const { RoleRegistry } = await import('../../index');
+      const registry = new RoleRegistry();
+      registry.define('alpha');
+      registry.define('Alpine');
+      registry.define('Zulu');
+      await adapter.saveRegistry(registry);
+
+      const summaries = await adapter.loadRoleSummaries({ name: 'AL' });
+      expect(summaries.items.map(item => item.name)).toEqual([
+        'alpha',
+        'Alpine'
+      ]);
+      expect(
+        (await adapter.loadRolesByName(['Alpine'], summaries.revision)).map(
+          role => role.name
+        )
+      ).toEqual(['Alpine']);
+
+      const first = await adapter.loadRegistrySnapshot();
+      const stale = await adapter.loadRegistrySnapshot();
+      first.registry.define('winner');
+      stale.registry.define('loser');
+      expect(
+        await adapter.saveRegistryIfRevision(first.registry, first.revision)
+      ).toEqual({ committed: true, revision: first.revision + 1 });
+      expect(
+        await adapter.saveRegistryIfRevision(stale.registry, stale.revision)
+      ).toEqual({ committed: false, revision: first.revision + 1 });
+    });
   });
 
   describe('Subject operations', () => {

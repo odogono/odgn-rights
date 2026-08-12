@@ -11,7 +11,12 @@ import type {
   DatabaseAdapter,
   PaginatedResult,
   PaginationOptions,
+  RegistryCommitResult,
+  RevisionedRoleSummaries,
   RightsRow,
+  RoleRegistrySnapshot,
+  RoleSummary,
+  RoleSummaryQuery,
   SubjectWithIdentifier
 } from './types';
 
@@ -120,6 +125,7 @@ export class RedisAdapter extends BaseAdapter {
       throw new Error('Not connected');
     }
     await this.redis.ping();
+    await this.redis.setnx(this.key('roles', '_revision'), '0');
   }
 
   // ===========================================================================
@@ -364,6 +370,43 @@ export class RedisAdapter extends BaseAdapter {
     return registry.getAll();
   }
 
+  async loadRoleSummaries(
+    query: RoleSummaryQuery = {}
+  ): Promise<RevisionedRoleSummaries> {
+    return this.withRegistryLock(async () => {
+      const names = await this.redis!.smembers(this.key('roles', '_all'));
+      const needle = query.name?.trim().toLocaleLowerCase() ?? '';
+      const items: RoleSummary[] = [];
+      for (const name of names) {
+        if (needle && !name.toLocaleLowerCase().includes(needle)) {
+          continue;
+        }
+        const role = await this.redis!.hgetall(this.key('roles', name));
+        if (role.created_at && role.updated_at) {
+          items.push({
+            createdAt: new Date(role.created_at).toISOString(),
+            name,
+            updatedAt: new Date(role.updated_at).toISOString()
+          });
+        }
+      }
+      items.sort(
+        (left, right) =>
+          left.createdAt.localeCompare(right.createdAt) ||
+          left.name.localeCompare(right.name, undefined, {
+            sensitivity: 'base'
+          }) ||
+          left.name.localeCompare(right.name)
+      );
+      return {
+        items,
+        revision: Number(
+          (await this.redis!.get(this.key('roles', '_revision'))) ?? 0
+        )
+      };
+    });
+  }
+
   async deleteRole(name: string): Promise<boolean> {
     if (!this.redis) {
       throw new Error('Not connected');
@@ -395,28 +438,70 @@ export class RedisAdapter extends BaseAdapter {
       throw new Error('Not connected');
     }
 
-    await this.transaction(async () => {
-      const rolesToSave = new Map<string, Role>();
+    await this.withRegistryLock(async () => {
+      await this.saveRegistryContents(registry);
+      await this.redis!.incr(this.key('roles', '_revision'));
+    });
+  }
 
-      const collectRoles = (role: Role) => {
-        if (!rolesToSave.has(role.name)) {
-          rolesToSave.set(role.name, role);
-          for (const parent of role.parents) {
-            collectRoles(parent);
-          }
+  private async saveRegistryContents(registry: RoleRegistry): Promise<void> {
+    const rolesToSave = new Map<string, Role>();
+
+    const collectRoles = (role: Role) => {
+      if (!rolesToSave.has(role.name)) {
+        rolesToSave.set(role.name, role);
+        for (const parent of role.parents) {
+          collectRoles(parent);
         }
-      };
-
-      registry.toJSON().forEach(roleJson => {
-        const role = registry.get(roleJson.name);
-        if (role) {
-          collectRoles(role);
-        }
-      });
-
-      for (const role of rolesToSave.values()) {
-        await this.saveRole(role);
       }
+    };
+
+    registry.toJSON().forEach(roleJson => {
+      const role = registry.get(roleJson.name);
+      if (role) {
+        collectRoles(role);
+      }
+    });
+
+    for (const role of rolesToSave.values()) {
+      await this.saveRole(role);
+    }
+  }
+
+  async loadRegistrySnapshot(): Promise<RoleRegistrySnapshot> {
+    return this.withRegistryLock(async () => ({
+      registry: await this.loadRegistry(),
+      revision: Number(
+        (await this.redis!.get(this.key('roles', '_revision'))) ?? 0
+      )
+    }));
+  }
+
+  async saveRegistryIfRevision(
+    registry: RoleRegistry,
+    expectedRevision: number
+  ): Promise<RegistryCommitResult> {
+    return this.withRegistryLock(async () => {
+      const revision = Number(
+        (await this.redis!.get(this.key('roles', '_revision'))) ?? 0
+      );
+      if (revision !== expectedRevision) {
+        return { committed: false, revision };
+      }
+      const nextNames = new Set(registry.getAll().map(role => role.name));
+      const currentNames = await this.redis!.smembers(
+        this.key('roles', '_all')
+      );
+      for (const currentName of currentNames) {
+        if (!nextNames.has(currentName)) {
+          await this.deleteRole(currentName);
+        }
+      }
+      await this.saveRegistryContents(registry);
+      const nextRevision = await this.redis!.incr(
+        this.key('roles', '_revision')
+      );
+      return { committed: true, revision: nextRevision };
     });
   }
 
@@ -800,6 +885,48 @@ export class RedisAdapter extends BaseAdapter {
   // ===========================================================================
   // Utility
   // ===========================================================================
+
+  /**
+   * Serialize registry-wide reads and commits behind a single-holder lock, so
+   * summaries and snapshots cannot pair role data with the wrong revision.
+   * Release is token-guarded, so a holder never deletes someone else's lock.
+   *
+   * Two limits worth knowing: the lock has a 30s TTL and no fencing token, so a
+   * body that overruns it can proceed alongside the next holder; and the
+   * revision-blind saveRole()/deleteRole() paths do not take it at all.
+   */
+  private async withRegistryLock<T>(fn: () => Promise<T>): Promise<T> {
+    if (!this.redis) {
+      throw new Error('Not connected');
+    }
+    const lockKey = this.key('roles', '_write_lock');
+    const token = `${Date.now()}-${Math.random()}`;
+    let acquired = false;
+    for (let attempt = 0; attempt < 100; attempt++) {
+      acquired =
+        (await this.redis.set(lockKey, token, 'PX', 30_000, 'NX')) === 'OK';
+      if (acquired) {
+        break;
+      }
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    if (!acquired) {
+      throw new Error('Timed out acquiring the role registry write lock');
+    }
+    try {
+      return await fn();
+    } finally {
+      await this.redis.eval(
+        `if redis.call('get', KEYS[1]) == ARGV[1] then
+           return redis.call('del', KEYS[1])
+         end
+         return 0`,
+        1,
+        lockKey,
+        token
+      );
+    }
+  }
 
   async clear(): Promise<void> {
     if (!this.redis) {

@@ -191,6 +191,69 @@ describe('SQLiteAdapter', () => {
       const editorRights = editorRole!.allRights();
       expect(editorRights.length).toBeGreaterThan(0);
     });
+
+    test('queries stable role summaries and hydrates an ordered batch', async () => {
+      const { RoleRegistry } = await import('../../index');
+      const registry = new RoleRegistry();
+      registry.define('Zulu');
+      registry.define('alpha');
+      registry.define('Alpine');
+      await adapter.saveRegistry(registry);
+
+      const page = await adapter.loadRoleSummaries({ name: 'al' });
+      expect(page.revision).toBeGreaterThan(0);
+      expect(page.items.map(item => item.name)).toEqual(['alpha', 'Alpine']);
+      expect(page.items[0]?.createdAt).toBeString();
+
+      const roles = await adapter.loadRolesByName(
+        ['Alpine', 'alpha'],
+        page.revision
+      );
+      expect(roles.map(role => role.name)).toEqual(['Alpine', 'alpha']);
+    });
+
+    test('conditionally commits a registry snapshot once', async () => {
+      const first = await adapter.loadRegistrySnapshot();
+      const second = await adapter.loadRegistrySnapshot();
+      first.registry.define('first-writer');
+      second.registry.define('stale-writer');
+
+      const committed = await adapter.saveRegistryIfRevision(
+        first.registry,
+        first.revision
+      );
+      const stale = await adapter.saveRegistryIfRevision(
+        second.registry,
+        second.revision
+      );
+
+      expect(committed).toEqual({ committed: true, revision: 1 });
+      expect(stale).toEqual({ committed: false, revision: 1 });
+      expect((await adapter.loadRegistry()).get('first-writer')).toBeDefined();
+      expect(
+        (await adapter.loadRegistry()).get('stale-writer')
+      ).toBeUndefined();
+    });
+
+    test('conditionally committing a snapshot removes deleted roles', async () => {
+      const { RoleRegistry } = await import('../../index');
+      const registry = new RoleRegistry();
+      registry.define('keep');
+      registry.define('remove');
+      await adapter.saveRegistry(registry);
+
+      const snapshot = await adapter.loadRegistrySnapshot();
+      expect(snapshot.registry.delete('remove')).toBe(true);
+      expect(
+        await adapter.saveRegistryIfRevision(
+          snapshot.registry,
+          snapshot.revision
+        )
+      ).toEqual({ committed: true, revision: snapshot.revision + 1 });
+
+      expect((await adapter.loadRegistry()).get('keep')).toBeDefined();
+      expect((await adapter.loadRegistry()).get('remove')).toBeUndefined();
+    });
   });
 
   describe('Subject operations', () => {

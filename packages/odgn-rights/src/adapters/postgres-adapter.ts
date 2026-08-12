@@ -12,8 +12,12 @@ import type {
   DatabaseAdapter,
   PaginatedResult,
   PaginationOptions,
+  RegistryCommitResult,
+  RevisionedRoleSummaries,
   RightsRow,
   RoleInheritanceRow,
+  RoleRegistrySnapshot,
+  RoleSummaryQuery,
   SubjectWithIdentifier
 } from './types';
 
@@ -257,6 +261,43 @@ export class PostgresAdapter extends BaseAdapter {
     return registry.getAll();
   }
 
+  async loadRoleSummaries(
+    query: RoleSummaryQuery = {}
+  ): Promise<RevisionedRoleSummaries> {
+    if (!this.sql) {
+      throw new Error('Not connected');
+    }
+    const { roleRegistryState, roles } = this.tables;
+    const name = query.name?.trim() ?? '';
+    return this.transaction(async () => {
+      // Keep the summary rows and revision in one read view. The shared lock
+      // prevents a revision-changing registry commit until these rows have
+      // been returned to the caller.
+      const states = await this.sql!.unsafe<
+        Array<{ revision: number | string }>
+      >(
+        `SELECT revision FROM ${roleRegistryState} WHERE singleton = 1 FOR SHARE`
+      );
+      const rows = await this.sql!.unsafe<
+        Array<{ created_at: Date; name: string; updated_at: Date }>
+      >(
+        `SELECT name, created_at, updated_at
+         FROM ${roles}
+         WHERE $1 = '' OR POSITION(LOWER($1) IN LOWER(name)) > 0
+         ORDER BY created_at, LOWER(name), name`,
+        [name]
+      );
+      return {
+        items: rows.map(row => ({
+          createdAt: new Date(row.created_at).toISOString(),
+          name: row.name,
+          updatedAt: new Date(row.updated_at).toISOString()
+        })),
+        revision: Number(states[0]?.revision ?? 0)
+      };
+    });
+  }
+
   async deleteRole(name: string): Promise<boolean> {
     if (!this.sql) {
       throw new Error('Not connected');
@@ -282,6 +323,12 @@ export class PostgresAdapter extends BaseAdapter {
     }
 
     await this.transaction(async () => {
+      // Serialize legacy whole-registry saves with revisioned readers/writers.
+      // Taking this lock before touching role rows keeps summaries paired with
+      // the revision they report.
+      await this.sql!.unsafe(
+        `SELECT revision FROM ${this.tables.roleRegistryState} WHERE singleton = 1 FOR UPDATE`
+      );
       const rolesToSave = new Map<string, Role>();
 
       const collectRoles = (role: Role) => {
@@ -303,6 +350,56 @@ export class PostgresAdapter extends BaseAdapter {
       for (const role of rolesToSave.values()) {
         await this.saveRole(role);
       }
+      await this.sql!.unsafe(
+        `UPDATE ${this.tables.roleRegistryState} SET revision = revision + 1 WHERE singleton = 1`
+      );
+    });
+  }
+
+  async loadRegistrySnapshot(): Promise<RoleRegistrySnapshot> {
+    return this.transaction(async () => {
+      // Take the shared lock before reading role rows, so a concurrent
+      // registry commit cannot slip in between and leave us reporting old
+      // roles alongside the revision that superseded them.
+      const [state] = await this.sql!.unsafe<
+        Array<{
+          revision: number | string;
+        }>
+      >(
+        `SELECT revision FROM ${this.tables.roleRegistryState} WHERE singleton = 1 FOR SHARE`
+      );
+      const registry = await this.loadRegistry();
+      return { registry, revision: Number(state?.revision ?? 0) };
+    });
+  }
+
+  async saveRegistryIfRevision(
+    registry: RoleRegistry,
+    expectedRevision: number
+  ): Promise<RegistryCommitResult> {
+    return this.transaction(async () => {
+      const [state] = await this.sql!.unsafe<
+        Array<{
+          revision: number | string;
+        }>
+      >(
+        `SELECT revision FROM ${this.tables.roleRegistryState} WHERE singleton = 1 FOR UPDATE`
+      );
+      const revision = Number(state?.revision ?? 0);
+      if (revision !== expectedRevision) {
+        return { committed: false, revision };
+      }
+      const nextNames = new Set(registry.getAll().map(role => role.name));
+      const currentRoles = await this.sql!.unsafe<Array<{ name: string }>>(
+        `SELECT name FROM ${this.tables.roles}`
+      );
+      for (const current of currentRoles) {
+        if (!nextNames.has(current.name)) {
+          await this.deleteRole(current.name);
+        }
+      }
+      await this.saveRegistry(registry);
+      return { committed: true, revision: expectedRevision + 1 };
     });
   }
 
