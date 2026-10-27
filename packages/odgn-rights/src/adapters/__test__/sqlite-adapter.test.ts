@@ -160,6 +160,18 @@ describe('SQLiteAdapter', () => {
       expect((await adapter.loadRights()).allRights()).toHaveLength(1);
     });
 
+    test('re-saving an identical right keeps its updatedAt', async () => {
+      const id = await adapter.saveRight(
+        new Right('/stable', { allow: [Flags.READ] })
+      );
+      const before = (await adapter.loadRight(id))!.updatedAt!.getTime();
+
+      await Bun.sleep(1100);
+      await adapter.saveRight(new Right('/stable', { allow: [Flags.READ] }));
+
+      expect((await adapter.loadRight(id))!.updatedAt!.getTime()).toBe(before);
+    });
+
     test('re-saving a role does not accumulate rights', async () => {
       const rights = new Rights();
       rights.allow('/a', Flags.READ);

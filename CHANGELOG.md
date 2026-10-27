@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.8.1 - 2026-10-27
+
+### Fixed
+
+- Saving a right identical to a stored one no longer moves its `updated_at`.
+  Role and subject saves re-save every linked right, so unchanged rights were
+  reporting a fresh update time.
+
 ## 0.8.0 - 2026-10-27
 
 ### Added
