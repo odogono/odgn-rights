@@ -183,6 +183,76 @@ CREATE INDEX IF NOT EXISTS idx_${tables.roles}_name ON ${tables.roles}(name);
 `;
 
 /**
+ * Name of the unique index that identifies a right. NULL validity dates are
+ * coalesced so that rights without a validity window still collide; the
+ * table-level UNIQUE constraint treats NULLs as distinct and never matches them.
+ */
+export const rightIdentityIndexName = (tables: TableNames): string =>
+  `uq_${tables.rights}_identity`;
+
+const postgresRightIdentity = `path, allow_mask, deny_mask, priority,
+  (COALESCE(valid_from, '-infinity'::timestamptz)),
+  (COALESCE(valid_until, 'infinity'::timestamptz))`;
+
+const sqliteRightIdentity = `path, allow_mask, deny_mask, priority,
+  COALESCE(valid_from, ''), COALESCE(valid_until, '')`;
+
+/**
+ * Conflict target matching the right identity index, for upserts.
+ */
+export const postgresRightConflictTarget = `(${postgresRightIdentity})`;
+export const sqliteRightConflictTarget = `(${sqliteRightIdentity})`;
+
+/**
+ * Collapse duplicate rights onto the lowest id per identity, repointing role and
+ * subject links, then add the identity index. Run inside a transaction.
+ */
+const generateRightsDedupe = (
+  tables: TableNames,
+  identity: string,
+  insertIgnore: { prefix: string; suffix: string }
+): string => `
+CREATE TEMP TABLE _odgn_rights_dedupe AS
+SELECT id, keep_id FROM (
+  SELECT id, MIN(id) OVER (PARTITION BY ${identity}) AS keep_id
+  FROM ${tables.rights}
+) ranked
+WHERE id <> keep_id;
+
+${insertIgnore.prefix} ${tables.roleRights} (role_id, right_id)
+SELECT DISTINCT rr.role_id, d.keep_id
+FROM ${tables.roleRights} rr
+JOIN _odgn_rights_dedupe d ON rr.right_id = d.id
+${insertIgnore.suffix};
+
+${insertIgnore.prefix} ${tables.subjectRights} (subject_id, right_id)
+SELECT DISTINCT sr.subject_id, d.keep_id
+FROM ${tables.subjectRights} sr
+JOIN _odgn_rights_dedupe d ON sr.right_id = d.id
+${insertIgnore.suffix};
+
+DELETE FROM ${tables.roleRights} WHERE right_id IN (SELECT id FROM _odgn_rights_dedupe);
+DELETE FROM ${tables.subjectRights} WHERE right_id IN (SELECT id FROM _odgn_rights_dedupe);
+DELETE FROM ${tables.rights} WHERE id IN (SELECT id FROM _odgn_rights_dedupe);
+
+DROP TABLE _odgn_rights_dedupe;
+
+CREATE UNIQUE INDEX ${rightIdentityIndexName(tables)} ON ${tables.rights} (${identity});
+`;
+
+export const generatePostgresRightsDedupe = (tables: TableNames): string =>
+  generateRightsDedupe(tables, postgresRightIdentity, {
+    prefix: 'INSERT INTO',
+    suffix: 'ON CONFLICT DO NOTHING'
+  });
+
+export const generateSQLiteRightsDedupe = (tables: TableNames): string =>
+  generateRightsDedupe(tables, sqliteRightIdentity, {
+    prefix: 'INSERT OR IGNORE INTO',
+    suffix: ''
+  });
+
+/**
  * Generate SQLite statements to drop all tables (useful for testing)
  */
 export const generateSQLiteDropSchema = (tables: TableNames): string => `

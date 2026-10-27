@@ -6,7 +6,12 @@ import { Role } from '../role';
 import { RoleRegistry } from '../role-registry';
 import { Subject } from '../subject';
 import { BaseAdapter } from './base-adapter';
-import { generatePostgresSchema } from './schema';
+import {
+  generatePostgresRightsDedupe,
+  generatePostgresSchema,
+  postgresRightConflictTarget,
+  rightIdentityIndexName
+} from './schema';
 import type {
   BaseAdapterOptions,
   DatabaseAdapter,
@@ -75,6 +80,37 @@ export class PostgresAdapter extends BaseAdapter {
       throw new Error('Not connected');
     }
     await this.sql.unsafe(generatePostgresSchema(this.tables));
+    await this.migrateRightIdentity();
+  }
+
+  /**
+   * Databases created before the identity index hold a duplicate row for every
+   * save of a right without validity dates. Collapse them once, then index.
+   */
+  private async migrateRightIdentity(): Promise<void> {
+    const sql = this.sql!;
+    const indexName = rightIdentityIndexName(this.tables);
+    const hasIndex = async () => {
+      const [row] = await sql.unsafe(`SELECT to_regclass($1) AS idx`, [
+        indexName
+      ]);
+      return row.idx !== null;
+    };
+
+    if (await hasIndex()) {
+      return;
+    }
+
+    await this.transaction(async () => {
+      // Serialise concurrent migrators; the loser re-checks and skips.
+      await sql.unsafe(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+        indexName
+      ]);
+      if (await hasIndex()) {
+        return;
+      }
+      await sql.unsafe(generatePostgresRightsDedupe(this.tables));
+    });
   }
 
   // ===========================================================================
@@ -93,7 +129,7 @@ export class PostgresAdapter extends BaseAdapter {
       `
       INSERT INTO ${rightsTable} (path, allow_mask, deny_mask, priority, description, tags, valid_from, valid_until)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-      ON CONFLICT (path, allow_mask, deny_mask, priority, valid_from, valid_until)
+      ON CONFLICT ${postgresRightConflictTarget}
       DO UPDATE SET updated_at = NOW()
       RETURNING id
     `,

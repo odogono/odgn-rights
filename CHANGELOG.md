@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- PostgreSQL and SQLite adapters no longer insert a duplicate row each time a
+  right without validity dates is saved. The `UNIQUE` constraint treated NULL
+  `valid_from`/`valid_until` as distinct, so the upsert never matched and every
+  role or subject save added fresh copies. Rights are now identified by a unique
+  index over coalesced validity dates, and `migrate()` collapses existing
+  duplicates onto the lowest id, repointing role and subject links, before
+  creating it.
+
 ## 0.7.0 - 2026-08-12
 
 ### Added

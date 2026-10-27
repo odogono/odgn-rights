@@ -14,10 +14,10 @@ import {
   type StartedTestContainer
 } from 'testcontainers';
 
-import { Flags, Right, Rights } from '@/index';
+import { Flags, Right, Rights, Role } from '@/index';
 
 import { PostgresAdapter } from '../postgres-adapter';
-import { createTableNames } from '../schema';
+import { createTableNames, rightIdentityIndexName } from '../schema';
 
 const POSTGRES_IMAGE = 'postgres:17-alpine';
 
@@ -80,6 +80,13 @@ const countAdapterQueries = async <T>(
     calls: Number((row as { calls: string } | undefined)?.calls ?? '0'),
     result
   };
+};
+
+const countRights = async (sql: SQL): Promise<number> => {
+  const [row] = await sql.unsafe(
+    `SELECT COUNT(*)::int AS n FROM ${tables.rights}`
+  );
+  return (row as { n: number }).n;
 };
 
 describe('PostgresAdapter', () => {
@@ -178,6 +185,93 @@ describe('PostgresAdapter', () => {
 
       const rights = await adapter.loadRightsByPath('/users/%');
       expect(rights.allRights()).toHaveLength(2);
+    });
+  });
+
+  describe('Right identity without validity dates', () => {
+    test('saving the same undated right twice reuses its row', async () => {
+      const first = await adapter.saveRight(
+        new Right('/docs', { allow: [Flags.READ] })
+      );
+      const second = await adapter.saveRight(
+        new Right('/docs', { allow: [Flags.READ] })
+      );
+
+      expect(second).toBe(first);
+      expect(await countRights(statsSql)).toBe(1);
+    });
+
+    test('re-saving a role does not accumulate rights', async () => {
+      const rights = new Rights();
+      rights.allow('/a', Flags.READ);
+      rights.allow('/b', Flags.READ, Flags.WRITE);
+
+      await adapter.saveRole(new Role('viewer', rights));
+      await adapter.saveRole(new Role('viewer', rights));
+      await adapter.saveRole(new Role('viewer', rights));
+
+      expect(await countRights(statsSql)).toBe(2);
+    });
+
+    test('migrate collapses legacy duplicates and repoints links', async () => {
+      await statsSql.unsafe(`DROP INDEX ${rightIdentityIndexName(tables)}`);
+
+      const ids = (await statsSql.unsafe(`
+        INSERT INTO ${tables.rights} (path, allow_mask) VALUES
+          ('/legacy', 1), ('/legacy', 1), ('/legacy', 1), ('/other', 1)
+        RETURNING id
+      `)) as { id: number }[];
+      const [keepId, dupeA, dupeB, otherId] = ids.map(row => row.id) as [
+        number,
+        number,
+        number,
+        number
+      ];
+
+      const [role] = await statsSql.unsafe(
+        `INSERT INTO ${tables.roles} (name) VALUES ('legacy') RETURNING id`
+      );
+      const [subject] = await statsSql.unsafe(
+        `INSERT INTO ${tables.subjects} (identifier) VALUES ('user-1') RETURNING id`
+      );
+      await statsSql.unsafe(
+        `INSERT INTO ${tables.roleRights} (role_id, right_id) VALUES ($1, $2), ($1, $3)`,
+        [role.id, dupeA, dupeB]
+      );
+      await statsSql.unsafe(
+        `INSERT INTO ${tables.subjectRights} (subject_id, right_id) VALUES ($1, $2)`,
+        [subject.id, dupeB]
+      );
+
+      await adapter.migrate();
+
+      const rows = await statsSql.unsafe(
+        `SELECT id FROM ${tables.rights} ORDER BY id`
+      );
+      expect(rows.map((row: { id: number }) => row.id)).toEqual([
+        keepId,
+        otherId
+      ]);
+
+      const roleLinks = await statsSql.unsafe(
+        `SELECT right_id FROM ${tables.roleRights} WHERE role_id = $1`,
+        [role.id]
+      );
+      expect(
+        roleLinks.map((row: { right_id: number }) => row.right_id)
+      ).toEqual([keepId]);
+
+      const subjectLinks = await statsSql.unsafe(
+        `SELECT right_id FROM ${tables.subjectRights} WHERE subject_id = $1`,
+        [subject.id]
+      );
+      expect(
+        subjectLinks.map((row: { right_id: number }) => row.right_id)
+      ).toEqual([keepId]);
+
+      expect(
+        await adapter.saveRight(new Right('/legacy', { allow: [Flags.READ] }))
+      ).toBe(keepId);
     });
   });
 

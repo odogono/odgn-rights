@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
 import { SQLiteAdapter } from '@/adapters/sqlite-adapter';
-import { Flags, Right, Rights } from '@/index';
+import { Flags, Right, Rights, Role } from '@/index';
 
 describe('SQLiteAdapter', () => {
   let adapter: SQLiteAdapter;
@@ -122,6 +122,31 @@ describe('SQLiteAdapter', () => {
 
       expect(loaded).not.toBeNull();
       expect(loaded!.priority).toBe(0);
+    });
+  });
+
+  describe('Right identity without validity dates', () => {
+    test('saving the same undated right twice reuses its row', async () => {
+      const first = await adapter.saveRight(
+        new Right('/docs', { allow: [Flags.READ] })
+      );
+      const second = await adapter.saveRight(
+        new Right('/docs', { allow: [Flags.READ] })
+      );
+
+      expect(second).toBe(first);
+      expect((await adapter.loadRights()).allRights()).toHaveLength(1);
+    });
+
+    test('re-saving a role does not accumulate rights', async () => {
+      const rights = new Rights();
+      rights.allow('/a', Flags.READ);
+      rights.allow('/b', Flags.READ, Flags.WRITE);
+
+      await adapter.saveRole(new Role('viewer', rights));
+      await adapter.saveRole(new Role('viewer', rights));
+
+      expect((await adapter.loadRights()).allRights()).toHaveLength(2);
     });
   });
 

@@ -6,7 +6,12 @@ import { Role } from '../role';
 import { RoleRegistry } from '../role-registry';
 import { Subject } from '../subject';
 import { BaseAdapter } from './base-adapter';
-import { generateSQLiteSchema } from './schema';
+import {
+  generateSQLiteRightsDedupe,
+  generateSQLiteSchema,
+  rightIdentityIndexName,
+  sqliteRightConflictTarget
+} from './schema';
 import type {
   BaseAdapterOptions,
   DatabaseAdapter,
@@ -111,6 +116,23 @@ export class SQLiteAdapter extends BaseAdapter {
       throw new Error('Not connected');
     }
     this.db.run(generateSQLiteSchema(this.tables));
+    this.migrateRightIdentity();
+  }
+
+  /**
+   * Databases created before the identity index hold a duplicate row for every
+   * save of a right without validity dates. Collapse them once, then index.
+   */
+  private migrateRightIdentity(): void {
+    const db = this.db!;
+    db.transaction(() => {
+      const existing = db
+        .query(`SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?`)
+        .get(rightIdentityIndexName(this.tables));
+      if (!existing) {
+        db.run(generateSQLiteRightsDedupe(this.tables));
+      }
+    }).immediate();
   }
 
   async enableWAL(): Promise<void> {
@@ -131,7 +153,7 @@ export class SQLiteAdapter extends BaseAdapter {
 
     const row = this.rightToRow(right);
 
-    this.stmtInsertRight.run({
+    const result = this.stmtInsertRight.get({
       $allow_mask: row.allow_mask,
       $deny_mask: row.deny_mask,
       $description: row.description,
@@ -140,11 +162,8 @@ export class SQLiteAdapter extends BaseAdapter {
       $tags: row.tags,
       $valid_from: row.valid_from,
       $valid_until: row.valid_until
-    });
+    }) as { id: number };
 
-    const result = this.db.query('SELECT last_insert_rowid() as id').get() as {
-      id: number;
-    };
     right._setDbId(result.id);
     return result.id;
   }
@@ -874,6 +893,9 @@ export class SQLiteAdapter extends BaseAdapter {
     this.stmtInsertRight = this.db.prepare(`
       INSERT INTO ${rights} (path, allow_mask, deny_mask, priority, description, tags, valid_from, valid_until)
       VALUES ($path, $allow_mask, $deny_mask, $priority, $description, $tags, $valid_from, $valid_until)
+      ON CONFLICT ${sqliteRightConflictTarget}
+      DO UPDATE SET updated_at = datetime('now')
+      RETURNING id
     `);
 
     this.stmtSelectRightById = this.db.prepare(`
