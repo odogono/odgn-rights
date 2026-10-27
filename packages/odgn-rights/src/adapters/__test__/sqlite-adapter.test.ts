@@ -1,7 +1,13 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { Database } from 'bun:sqlite';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
 import { SQLiteAdapter } from '@/adapters/sqlite-adapter';
 import { Flags, Right, Rights, Role } from '@/index';
+
+import { createTableNames, rightIdentityIndexName } from '../schema';
 
 describe('SQLiteAdapter', () => {
   let adapter: SQLiteAdapter;
@@ -163,6 +169,83 @@ describe('SQLiteAdapter', () => {
       await adapter.saveRole(new Role('viewer', rights));
 
       expect((await adapter.loadRights()).allRights()).toHaveLength(2);
+    });
+
+    test('migrate collapses legacy duplicates and repoints links', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'odgn-rights-'));
+      const filename = join(dir, 'legacy.db');
+      const tables = createTableNames();
+      const legacy = new SQLiteAdapter({ filename });
+      const raw = new Database(filename);
+
+      try {
+        await legacy.connect();
+        await legacy.migrate();
+        raw.run(`DROP INDEX ${rightIdentityIndexName(tables)}`);
+
+        const insertRight = raw.query(
+          `INSERT INTO ${tables.rights} (path, allow_mask) VALUES (?, 1) RETURNING id`
+        );
+        const [keepId, dupeA, dupeB, otherId] = [
+          '/legacy',
+          '/legacy',
+          '/legacy',
+          '/other'
+        ].map(path => (insertRight.get(path) as { id: number }).id) as [
+          number,
+          number,
+          number,
+          number
+        ];
+        const { id: roleId } = raw
+          .query(
+            `INSERT INTO ${tables.roles} (name) VALUES ('legacy') RETURNING id`
+          )
+          .get() as { id: number };
+        const { id: subjectId } = raw
+          .query(
+            `INSERT INTO ${tables.subjects} (identifier) VALUES ('user-1') RETURNING id`
+          )
+          .get() as { id: number };
+        raw
+          .query(
+            `INSERT INTO ${tables.roleRights} (role_id, right_id) VALUES (?1, ?2), (?1, ?3)`
+          )
+          .run(roleId, dupeA, dupeB);
+        raw
+          .query(
+            `INSERT INTO ${tables.subjectRights} (subject_id, right_id) VALUES (?, ?)`
+          )
+          .run(subjectId, dupeB);
+
+        await legacy.migrate();
+        legacy.prepareStatementsAfterMigration();
+
+        const ids = raw
+          .query(`SELECT id FROM ${tables.rights} ORDER BY id`)
+          .all() as { id: number }[];
+        expect(ids.map(row => row.id)).toEqual([keepId, otherId]);
+
+        const roleLinks = raw
+          .query(`SELECT right_id FROM ${tables.roleRights} WHERE role_id = ?`)
+          .all(roleId) as { right_id: number }[];
+        expect(roleLinks.map(row => row.right_id)).toEqual([keepId]);
+
+        const subjectLinks = raw
+          .query(
+            `SELECT right_id FROM ${tables.subjectRights} WHERE subject_id = ?`
+          )
+          .all(subjectId) as { right_id: number }[];
+        expect(subjectLinks.map(row => row.right_id)).toEqual([keepId]);
+
+        expect(
+          await legacy.saveRight(new Right('/legacy', { allow: [Flags.READ] }))
+        ).toBe(keepId);
+      } finally {
+        raw.close();
+        await legacy.disconnect();
+        rmSync(dir, { force: true, recursive: true });
+      }
     });
   });
 
