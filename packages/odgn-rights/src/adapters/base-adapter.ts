@@ -25,6 +25,8 @@ import type {
  * Provides common utility methods for serialization/deserialization
  * and table name management.
  */
+const SQLITE_DATETIME = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
+
 export abstract class BaseAdapter implements DatabaseAdapter {
   protected readonly tablePrefix: string;
   protected readonly _tables: TableNames;
@@ -101,6 +103,10 @@ export abstract class BaseAdapter implements DatabaseAdapter {
 
     const right = new Right(row.path, init);
     right._setDbId(row.id);
+    right._setTimestamps(
+      this.parseRowTimestamp(row.created_at),
+      this.parseRowTimestamp(row.updated_at)
+    );
     return right;
   };
 
@@ -136,6 +142,19 @@ export abstract class BaseAdapter implements DatabaseAdapter {
       mask |= f;
     }
     return mask;
+  };
+
+  /**
+   * Parse a row's created_at/updated_at. Postgres yields Date objects; SQLite's
+   * datetime('now') yields 'YYYY-MM-DD HH:MM:SS' in UTC without a zone marker.
+   */
+  protected parseRowTimestamp = (value: string | Date): Date | undefined => {
+    if (typeof value !== 'string') {
+      return value;
+    }
+    return this.parseTimestamp(
+      SQLITE_DATETIME.test(value) ? `${value.replace(' ', 'T')}Z` : value
+    );
   };
 
   /**

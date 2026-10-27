@@ -125,6 +125,22 @@ describe('SQLiteAdapter', () => {
     });
   });
 
+  describe('Right timestamps', () => {
+    test('loaded rights carry their stored timestamps', async () => {
+      const before = Date.now() - 60_000;
+      const id = await adapter.saveRight(
+        new Right('/stamped', { allow: [Flags.READ] })
+      );
+
+      const loaded = await adapter.loadRight(id);
+
+      expect(loaded!.createdAt).toBeInstanceOf(Date);
+      expect(loaded!.createdAt!.getTime()).toBeGreaterThan(before);
+      expect(loaded!.createdAt!.getTime()).toBeLessThan(Date.now() + 60_000);
+      expect(loaded!.updatedAt).toBeInstanceOf(Date);
+    });
+  });
+
   describe('Right identity without validity dates', () => {
     test('saving the same undated right twice reuses its row', async () => {
       const first = await adapter.saveRight(

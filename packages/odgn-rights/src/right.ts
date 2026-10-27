@@ -28,6 +28,8 @@ export class Right {
   private readonly _priority: number;
   private readonly _re?: RegExp;
   private _dbId?: number;
+  private _createdAt?: Date;
+  private _updatedAt?: Date;
 
   constructor(path: string, init?: RightInit) {
     const parsed = parsePath(path);
@@ -165,6 +167,21 @@ export class Right {
 
   _setDbId(id: number): void {
     this._dbId = id;
+  }
+
+  /** When the persisted row was created; set only on rights loaded from an adapter. */
+  get createdAt(): Date | undefined {
+    return this._createdAt;
+  }
+
+  /** When the persisted row was last saved; set only on rights loaded from an adapter. */
+  get updatedAt(): Date | undefined {
+    return this._updatedAt;
+  }
+
+  _setTimestamps(createdAt?: Date, updatedAt?: Date): void {
+    this._createdAt = createdAt;
+    this._updatedAt = updatedAt;
   }
 
   toString(): string {

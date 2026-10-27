@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `Right.createdAt` and `Right.updatedAt` expose the stored row timestamps on
+  rights loaded from an adapter.
+
 ### Fixed
 
 - PostgreSQL and SQLite adapters no longer insert a duplicate row each time a
