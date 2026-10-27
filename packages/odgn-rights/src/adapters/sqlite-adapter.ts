@@ -894,7 +894,7 @@ export class SQLiteAdapter extends BaseAdapter {
       INSERT INTO ${rights} (path, allow_mask, deny_mask, priority, description, tags, valid_from, valid_until)
       VALUES ($path, $allow_mask, $deny_mask, $priority, $description, $tags, $valid_from, $valid_until)
       ON CONFLICT ${sqliteRightConflictTarget}
-      DO UPDATE SET updated_at = datetime('now')
+      DO UPDATE SET updated_at = ${rights}.updated_at
       RETURNING id
     `);
 

@@ -130,7 +130,9 @@ export class PostgresAdapter extends BaseAdapter {
       INSERT INTO ${rightsTable} (path, allow_mask, deny_mask, priority, description, tags, valid_from, valid_until)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       ON CONFLICT ${postgresRightConflictTarget}
-      DO UPDATE SET updated_at = NOW()
+      -- No-op update so RETURNING yields the existing id; an identical right
+      -- is unchanged, so its updated_at stays put.
+      DO UPDATE SET updated_at = ${rightsTable}.updated_at
       RETURNING id
     `,
       [
