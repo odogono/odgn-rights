@@ -42,12 +42,11 @@ export class PostgresAdapter extends BaseAdapter {
   private sql: SQL | null = null;
   private readonly options: PostgresAdapterOptions;
   private transactionDepth = 0;
-  private readonly bound: boolean;
+  private bound = false;
 
   constructor(options: PostgresAdapterOptions = {}) {
     super(options);
     this.options = options;
-    this.bound = false;
   }
 
   /**
@@ -66,7 +65,7 @@ export class PostgresAdapter extends BaseAdapter {
     bound.sql = sql;
     // Always nest, so `transaction()` never begins or ends the caller's.
     bound.transactionDepth = 1;
-    (bound as { bound: boolean }).bound = true;
+    bound.bound = true;
     return bound;
   }
 
