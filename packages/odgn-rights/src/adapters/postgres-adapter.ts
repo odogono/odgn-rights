@@ -42,13 +42,38 @@ export class PostgresAdapter extends BaseAdapter {
   private sql: SQL | null = null;
   private readonly options: PostgresAdapterOptions;
   private transactionDepth = 0;
+  private readonly bound: boolean;
 
   constructor(options: PostgresAdapterOptions = {}) {
     super(options);
     this.options = options;
+    this.bound = false;
+  }
+
+  /**
+   * Return an adapter that runs every query on `sql`: a connection or
+   * transaction the caller owns, such as the handle Bun's `sql.begin()` passes
+   * to its callback or a reserved connection.
+   *
+   * The bound adapter never sends `BEGIN`, `COMMIT` or `ROLLBACK`.
+   * `transaction(fn)` joins the caller's transaction, and errors propagate so
+   * the caller decides whether to roll back. `connect()` and `disconnect()` do
+   * nothing, because the caller owns the connection's lifetime. This adapter
+   * does not need to be connected itself.
+   */
+  bind(sql: SQL): PostgresAdapter {
+    const bound = new PostgresAdapter(this.options);
+    bound.sql = sql;
+    // Always nest, so `transaction()` never begins or ends the caller's.
+    bound.transactionDepth = 1;
+    (bound as { bound: boolean }).bound = true;
+    return bound;
   }
 
   async connect(): Promise<void> {
+    if (this.bound) {
+      return;
+    }
     this.sql = this.options.url
       ? new SQL({
           idleTimeout: this.options.idleTimeout ?? 30,
@@ -69,6 +94,9 @@ export class PostgresAdapter extends BaseAdapter {
   }
 
   async disconnect(): Promise<void> {
+    if (this.bound) {
+      return;
+    }
     if (this.sql) {
       await this.sql.end();
       this.sql = null;

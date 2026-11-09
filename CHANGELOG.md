@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.9.0 - 2026-11-09
+
+### Added
+
+- `PostgresAdapter.bind(sql)` returns an adapter that runs every query on a
+  connection or transaction the caller owns, such as the handle from Bun's
+  `sql.begin()` or a reserved connection. Adapter writes then commit or roll
+  back with the caller's own writes. The bound adapter never sends `BEGIN`,
+  `COMMIT` or `ROLLBACK`: `transaction()` joins the caller's transaction and
+  errors propagate. `connect()` and `disconnect()` do nothing, and the adapter
+  you bind from does not need to be connected.
+
 ## 0.8.1 - 2026-10-27
 
 ### Fixed
