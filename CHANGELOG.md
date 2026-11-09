@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.9.1 - 2026-11-09
+
+### Fixed
+
+- The package builds again. 0.9.0 was tagged but failed its type check during
+  `prepublishOnly`, so it was never published to npm. Use 0.9.1 for
+  `PostgresAdapter.bind(sql)`.
+
 ## 0.9.0 - 2026-11-09
 
 ### Added
