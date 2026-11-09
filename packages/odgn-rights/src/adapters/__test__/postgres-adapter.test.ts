@@ -14,7 +14,7 @@ import {
   type StartedTestContainer
 } from 'testcontainers';
 
-import { Flags, Right, Rights, Role } from '@/index';
+import { Flags, Right, Rights, Role, Subject } from '@/index';
 
 import { PostgresAdapter } from '../postgres-adapter';
 import { createTableNames, rightIdentityIndexName } from '../schema';
@@ -48,6 +48,12 @@ const getConnectionUri = (container: StartedTestContainer): string => {
 };
 
 const tables = createTableNames();
+
+const subjectWithRight = () => {
+  const subject = new Subject();
+  subject.rights.allow('/profile', Flags.READ);
+  return subject;
+};
 
 /**
  * Count the statements issued against any of the adapter's tables while
@@ -674,6 +680,99 @@ describe('PostgresAdapter', () => {
 
       const rights = await adapter.loadRights();
       expect(rights.allRights()).toHaveLength(0);
+    });
+  });
+
+  describe('bind', () => {
+    let callerSql: SQL;
+
+    beforeEach(() => {
+      callerSql = new SQL({ max: 1, url: getConnectionUri(container) });
+    });
+
+    afterEach(async () => {
+      await callerSql.end();
+    });
+
+    test('a caller rollback undoes a bound saveSubject', async () => {
+      await callerSql
+        .begin(async tx => {
+          await adapter.bind(tx).saveSubject('bound-user', subjectWithRight());
+          throw new Error('caller rolls back');
+        })
+        .catch(() => {});
+
+      expect(await adapter.loadSubject('bound-user')).toBeNull();
+    });
+
+    test('a bound write commits with the caller own write', async () => {
+      await callerSql`CREATE TABLE IF NOT EXISTS bind_side (id text PRIMARY KEY)`;
+      try {
+        await callerSql.begin(async tx => {
+          await adapter.bind(tx).saveSubject('bound-user', subjectWithRight());
+          await tx`INSERT INTO bind_side (id) VALUES ('bound-user')`;
+        });
+
+        expect(await adapter.loadSubject('bound-user')).not.toBeNull();
+        const rows = await callerSql`SELECT id FROM bind_side`;
+        expect(rows).toHaveLength(1);
+      } finally {
+        await callerSql`DROP TABLE IF EXISTS bind_side`;
+      }
+    });
+
+    test('a nested transaction on a bound adapter does not commit early', async () => {
+      await callerSql
+        .begin(async tx => {
+          const bound = adapter.bind(tx);
+          await bound.transaction(async inner => {
+            await inner.saveSubject('bound-user', subjectWithRight());
+          });
+          // Another session must not see the write before the caller commits.
+          expect(await adapter.loadSubject('bound-user')).toBeNull();
+          throw new Error('caller rolls back');
+        })
+        .catch(() => {});
+
+      expect(await adapter.loadSubject('bound-user')).toBeNull();
+    });
+
+    test('an error inside a bound transaction propagates to the caller', async () => {
+      const error = await callerSql
+        .begin(async tx => {
+          await adapter.bind(tx).transaction(async () => {
+            throw new Error('inner failure');
+          });
+        })
+        .catch((error_: Error) => error_);
+
+      expect((error as Error).message).toBe('inner failure');
+    });
+
+    test('works on a reserved connection', async () => {
+      const reserved = await callerSql.reserve();
+      try {
+        await reserved`BEGIN`;
+        await adapter
+          .bind(reserved)
+          .saveSubject('bound-user', subjectWithRight());
+        await reserved`ROLLBACK`;
+      } finally {
+        reserved.release();
+      }
+
+      expect(await adapter.loadSubject('bound-user')).toBeNull();
+    });
+
+    test('binding does not need the adapter to be connected', async () => {
+      const unconnected = new PostgresAdapter();
+      await callerSql.begin(async tx => {
+        const bound = unconnected.bind(tx);
+        await bound.saveSubject('bound-user', subjectWithRight());
+        await bound.disconnect();
+      });
+
+      expect(await adapter.loadSubject('bound-user')).not.toBeNull();
     });
   });
 

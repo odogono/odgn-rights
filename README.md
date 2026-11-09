@@ -546,6 +546,20 @@ await adapter.transaction(async () => {
 });
 ```
 
+To include adapter writes in a transaction your application owns, bind a
+`PostgresAdapter` to that transaction. The bound adapter runs every query on the
+handle you give it and never sends `BEGIN`, `COMMIT` or `ROLLBACK`, so your
+writes and the adapter's commit or roll back together. `bind` works with the
+handle from Bun's `sql.begin()` and with a reserved connection, and the adapter
+you bind from does not need to be connected:
+
+```ts
+await sql.begin(async tx => {
+  await adapter.bind(tx).saveSubject('user-1', subject);
+  await tx`INSERT INTO audit (subject) VALUES ('user-1')`;
+});
+```
+
 ### Adapter Interface
 
 All adapters implement the `DatabaseAdapter` interface:
