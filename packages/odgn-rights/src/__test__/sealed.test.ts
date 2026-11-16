@@ -108,6 +108,22 @@ describe('Sealing', () => {
     expect(editor.parents.map(role => role.name)).toEqual(['viewer']);
   });
 
+  test('sealing drops a rights list built before it, and freezes entries', () => {
+    const registry = new RoleRegistry();
+    const role = registry.define('early');
+    role.rights.allow('/early', Flags.READ);
+    const before = role.allRights();
+    registry.seal();
+
+    const after = role.allRights();
+    expect(after).not.toBe(before);
+    expect(() => after.push(before[0]!)).toThrow(TypeError);
+    expect(() => {
+      after[0]!.right = new Right('/other', { allow: [Flags.ALL] });
+    }).toThrow(TypeError);
+    expect(after[0]!.right.path).toBe('/early');
+  });
+
   test('delete checks every affected role before changing anything', () => {
     const registry = new RoleRegistry();
     const base = registry.define('base');

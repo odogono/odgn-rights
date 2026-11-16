@@ -32,6 +32,9 @@ export class Role {
     this._sealed = true;
     this.rights.seal();
     Object.freeze(this.parents);
+    // Drop a list built before sealing, so the next allRights() builds a
+    // frozen one.
+    this._cachedAllRights = null;
     for (const parent of this.parents) {
       parent.seal();
     }
@@ -124,10 +127,18 @@ export class Role {
     for (const parent of this.parents) {
       list.push(...parent.allRights());
     }
-    // A sealed role's list is shared by every reader, so freeze it.
-    this._cachedAllRights = this._sealed
-      ? (Object.freeze(list) as typeof list)
-      : list;
+    // A sealed role's list is shared by every reader, so freeze it and its
+    // entries.
+    if (this._sealed) {
+      for (const entry of list) {
+        if (entry.source) {
+          Object.freeze(entry.source);
+        }
+        Object.freeze(entry);
+      }
+      Object.freeze(list);
+    }
+    this._cachedAllRights = list;
     return this._cachedAllRights;
   }
 
