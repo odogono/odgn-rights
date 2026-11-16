@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.10.0 - 2026-11-16
+
 ### Added
 
 - `loadRegistryRevision()` on every adapter reads the registry revision
@@ -19,10 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- `saveSubject` links a subject to its roles by name and no longer rewrites
-  their rights or inheritance. A role that is not stored yet is added with no
-  rights or parents. Save roles with `saveRole` or `saveRegistry` before
-  saving subjects that use them.
+- **Breaking:** `saveSubject` links a subject to its roles by name and no
+  longer rewrites their rights or inheritance. A role that is not stored yet
+  is added with no rights or parents. Save roles with `saveRole` or
+  `saveRegistry` before saving subjects that use them.
 - Every write that can change a loaded registry now advances the registry
   revision: `saveRole`, `deleteRole` and `deleteRight` (when something is
   deleted), `clear`, and `saveSubject` when it adds a role. On Postgres these
