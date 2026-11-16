@@ -235,8 +235,8 @@ export class SQLiteAdapter extends BaseAdapter {
   }
 
   /**
-   * Delete a right. When a role held it, its role links go with it, so the
-   * registry revision is incremented in the same transaction.
+   * Delete a right. A role holding it loses it too, so the registry revision
+   * is incremented in the same transaction whenever a right is deleted.
    */
   async deleteRight(id: number): Promise<boolean> {
     if (!this.db || !this.stmtDeleteRight) {
@@ -244,11 +244,8 @@ export class SQLiteAdapter extends BaseAdapter {
     }
 
     return this.transaction(async () => {
-      const held = this.db!.prepare(
-        `SELECT 1 FROM ${this.tables.roleRights} WHERE right_id = $id LIMIT 1`
-      ).get({ $id: id });
       const deleted = this.stmtDeleteRight!.run({ $id: id }).changes > 0;
-      if (deleted && held) {
+      if (deleted) {
         this.incrementRegistryRevision();
       }
       return deleted;
@@ -905,14 +902,21 @@ export class SQLiteAdapter extends BaseAdapter {
       subjects
     } = this.tables;
 
-    this.db.run(`DELETE FROM ${subjectRights}`);
-    this.db.run(`DELETE FROM ${subjectRoles}`);
-    this.db.run(`DELETE FROM ${subjects}`);
-    this.db.run(`DELETE FROM ${roleInheritance}`);
-    this.db.run(`DELETE FROM ${roleRights}`);
-    this.db.run(`DELETE FROM ${roles}`);
-    this.db.run(`DELETE FROM ${rights}`);
-    this.incrementRegistryRevision();
+    // One transaction, so the data and the revision change together.
+    await this.transaction(async () => {
+      for (const table of [
+        subjectRights,
+        subjectRoles,
+        subjects,
+        roleInheritance,
+        roleRights,
+        roles,
+        rights
+      ]) {
+        this.db!.run(`DELETE FROM ${table}`);
+      }
+      this.incrementRegistryRevision();
+    });
     this.roleIdCache.clear();
   }
 

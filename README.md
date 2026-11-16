@@ -617,9 +617,8 @@ backends, and it deletes roles absent from the registry you pass — unlike
 `saveRegistry`, which is an unconditional upsert that never removes roles.
 
 Every adapter write that can change a loaded registry advances the revision:
-`saveRole`, `deleteRole` (when a role is deleted), `deleteRight` (when a role
-holds the right), `clear`, and `saveSubject` when it adds a role that was not
-stored. `saveSubject` links a subject to stored roles by name and never
+`saveRole`, `deleteRole` and `deleteRight` (when something is deleted),
+`clear`, and `saveSubject` when it adds a role that was not stored. `saveSubject` links a subject to stored roles by name and never
 rewrites their rights or inheritance. So a reader can cache a loaded registry
 and reuse it while the revision is unchanged:
 
@@ -641,9 +640,11 @@ const currentRegistry = async () => {
 const subject = await adapter.loadSubject('user-123', await currentRegistry());
 ```
 
-`seal()` makes a registry, its roles and their rights throw `SealedError` on
-any change, so code sharing a cached registry cannot change it for every
-other reader. Load a fresh registry to make changes.
+`seal()` makes a registry, its roles (and every role they inherit from) and
+their rights throw `SealedError` on any change, so code sharing a cached
+registry cannot change it for every other reader. A sealed role's `parents`
+array and its `allRights()` list are frozen, so writing to them directly throws
+a `TypeError`. Load a fresh registry to make changes.
 
 To list roles without hydrating rights and inheritance, use summaries, then
 batch-hydrate only the roles you need against the same revision:
@@ -661,8 +662,8 @@ const roles = await adapter.loadRolesByName(
 // registry moved on, so you never mix data from two revisions.
 ```
 
-`saveRole` and `deleteRole` are revision-blind: they neither check nor advance
-the revision, so a concurrent conditional commit cannot see them. They are
+`saveRole` and `deleteRole` advance the revision but do not check an expected
+one, so they can overwrite a concurrent conditional commit. They are
 deprecated for production use — route role writes through
 `saveRegistryIfRevision` instead.
 

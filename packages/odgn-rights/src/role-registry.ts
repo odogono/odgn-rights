@@ -74,6 +74,16 @@ export class RoleRegistry {
     if (!removed) {
       return false;
     }
+    // Check every role the delete would change before changing any of them.
+    const affected = [removed, ...this.roles.values()].filter(role =>
+      role === removed
+        ? role.parents.length > 0
+        : role.parents.includes(removed)
+    );
+    const sealed = affected.find(role => role.isSealed);
+    if (sealed) {
+      throw new SealedError(`Role ${sealed.name}`);
+    }
     this.roles.delete(name);
     for (const role of this.roles.values()) {
       role.removeParent(removed);

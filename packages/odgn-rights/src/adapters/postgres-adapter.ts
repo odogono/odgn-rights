@@ -254,28 +254,22 @@ export class PostgresAdapter extends BaseAdapter {
   }
 
   /**
-   * Delete a right. When a role held it, its role links go with it, so the
-   * registry revision is incremented in the same transaction.
+   * Delete a right. A role holding it loses it too, so the registry revision
+   * is incremented in the same transaction whenever a right is deleted.
    */
   async deleteRight(id: number): Promise<boolean> {
     if (!this.sql) {
       throw new Error('Not connected');
     }
 
-    const { rights: rightsTable, roleRights } = this.tables;
-
     return this.transaction(async () => {
-      const [heldRow] = await this.sql!.unsafe<Array<{ held: boolean }>>(
-        `SELECT EXISTS (SELECT 1 FROM ${roleRights} WHERE right_id = $1) AS held`,
-        [id]
-      );
-      const held = heldRow?.held ?? false;
+      await this.lockRegistryRevision();
       const result = await this.sql!.unsafe(
-        `DELETE FROM ${rightsTable} WHERE id = $1`,
+        `DELETE FROM ${this.tables.rights} WHERE id = $1`,
         [id]
       );
       const deleted = (result as unknown as { count: number }).count > 0;
-      if (deleted && held) {
+      if (deleted) {
         await this.incrementRegistryRevision();
       }
       return deleted;
@@ -296,6 +290,7 @@ export class PostgresAdapter extends BaseAdapter {
     }
 
     return this.transaction(async () => {
+      await this.lockRegistryRevision();
       const roleId = await this.writeRole(role);
       await this.incrementRegistryRevision();
       return roleId;
@@ -347,6 +342,17 @@ export class PostgresAdapter extends BaseAdapter {
     }
 
     return roleId;
+  }
+
+  /**
+   * Lock the revision row before writing role rows. Every registry write takes
+   * this lock first, so two writers always wait in the same order and cannot
+   * deadlock.
+   */
+  private async lockRegistryRevision(): Promise<void> {
+    await this.sql!.unsafe(
+      `SELECT revision FROM ${this.tables.roleRegistryState} WHERE singleton = 1 FOR UPDATE`
+    );
   }
 
   private async incrementRegistryRevision(): Promise<void> {
@@ -406,6 +412,7 @@ export class PostgresAdapter extends BaseAdapter {
     }
 
     return this.transaction(async () => {
+      await this.lockRegistryRevision();
       const deleted = await this.deleteRoleRow(name);
       if (deleted) {
         await this.incrementRegistryRevision();
@@ -573,6 +580,13 @@ export class PostgresAdapter extends BaseAdapter {
     const { subjectRights, subjectRoles, subjects } = this.tables;
 
     return this.transaction(async () => {
+      // Resolve roles before touching subject rows: adding a missing role
+      // takes the revision lock, which every registry write takes first.
+      const roleIds: number[] = [];
+      for (const role of subject.roles) {
+        roleIds.push(await this.linkRole(role.name));
+      }
+
       const [subjectResult] = await this.sql!.unsafe(
         `
         INSERT INTO ${subjects} (identifier)
@@ -595,8 +609,7 @@ export class PostgresAdapter extends BaseAdapter {
         [subjectId]
       );
 
-      for (const role of subject.roles) {
-        const roleId = await this.linkRole(role.name);
+      for (const roleId of roleIds) {
         await this.sql!.unsafe(
           `INSERT INTO ${subjectRoles} (subject_id, role_id) VALUES ($1, $2)`,
           [subjectId, roleId]
@@ -622,6 +635,18 @@ export class PostgresAdapter extends BaseAdapter {
    */
   private async linkRole(name: string): Promise<number> {
     const { roles } = this.tables;
+    const selectId = async () => {
+      const [row] = await this.sql!.unsafe<Array<{ id: number }>>(
+        `SELECT id FROM ${roles} WHERE name = $1`,
+        [name]
+      );
+      return row?.id;
+    };
+    const existingId = await selectId();
+    if (existingId !== undefined) {
+      return existingId;
+    }
+    await this.lockRegistryRevision();
     const [inserted] = await this.sql!.unsafe<Array<{ id: number }>>(
       `INSERT INTO ${roles} (name) VALUES ($1)
        ON CONFLICT (name) DO NOTHING
@@ -632,14 +657,12 @@ export class PostgresAdapter extends BaseAdapter {
       await this.incrementRegistryRevision();
       return inserted.id;
     }
-    const [existing] = await this.sql!.unsafe<Array<{ id: number }>>(
-      `SELECT id FROM ${roles} WHERE name = $1`,
-      [name]
-    );
-    if (!existing) {
+    // Another writer added it after the first read.
+    const raceId = await selectId();
+    if (raceId === undefined) {
       throw new Error(`Role ${name} could not be linked`);
     }
-    return existing.id;
+    return raceId;
   }
 
   async loadSubject(
@@ -950,14 +973,22 @@ export class PostgresAdapter extends BaseAdapter {
       subjects
     } = this.tables;
 
-    await this.sql.unsafe(`DELETE FROM ${subjectRights}`);
-    await this.sql.unsafe(`DELETE FROM ${subjectRoles}`);
-    await this.sql.unsafe(`DELETE FROM ${subjects}`);
-    await this.sql.unsafe(`DELETE FROM ${roleInheritance}`);
-    await this.sql.unsafe(`DELETE FROM ${roleRights}`);
-    await this.sql.unsafe(`DELETE FROM ${roles}`);
-    await this.sql.unsafe(`DELETE FROM ${rights}`);
-    await this.incrementRegistryRevision();
+    // One transaction, so the data and the revision change together.
+    await this.transaction(async () => {
+      await this.lockRegistryRevision();
+      for (const table of [
+        subjectRights,
+        subjectRoles,
+        subjects,
+        roleInheritance,
+        roleRights,
+        roles,
+        rights
+      ]) {
+        await this.sql!.unsafe(`DELETE FROM ${table}`);
+      }
+      await this.incrementRegistryRevision();
+    });
   }
 
   async transaction<T>(

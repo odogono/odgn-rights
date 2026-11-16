@@ -87,6 +87,43 @@ describe('Sealing', () => {
     );
   });
 
+  test('sealing a role seals the roles it inherits from', () => {
+    const parent = new Role('parent');
+    parent.rights.allow('/base', Flags.READ);
+    const registry = new RoleRegistry();
+    registry.define('child').inheritsFrom(parent);
+    registry.seal();
+
+    expect(parent.isSealed).toBe(true);
+    expect(() => parent.rights.allow('/base', Flags.WRITE)).toThrow(
+      SealedError
+    );
+  });
+
+  test('a sealed role freezes its parents and its inherited rights list', () => {
+    const editor = sealedRegistry().get('editor')!;
+
+    expect(() => editor.parents.push(new Role('extra'))).toThrow(TypeError);
+    expect(() => editor.allRights().pop()).toThrow(TypeError);
+    expect(editor.parents.map(role => role.name)).toEqual(['viewer']);
+  });
+
+  test('delete checks every affected role before changing anything', () => {
+    const registry = new RoleRegistry();
+    const base = registry.define('base');
+    registry.define('other');
+    registry.define('unrelated').seal();
+    const dependent = registry.define('dependent').inheritsFrom(base);
+    dependent.seal();
+
+    expect(() => registry.delete('base')).toThrow(SealedError);
+    expect(registry.get('base')).toBe(base);
+    expect(dependent.parents).toEqual([base]);
+
+    // A sealed role without the edge does not block a delete.
+    expect(registry.delete('other')).toBe(true);
+  });
+
   test('a sealed right can still record its database id', () => {
     const right = new Right('/x', { allow: [Flags.READ] }).seal();
     right._setDbId(7);

@@ -183,7 +183,8 @@ export type DatabaseAdapter = {
   connect(): Promise<void>;
 
   /**
-   * Delete a right by its database ID
+   * Delete a right by its database ID. A role holding the right loses it,
+   * so a successful delete advances the registry revision.
    * @returns true if the right was deleted, false if not found
    */
   deleteRight(id: number): Promise<boolean>;
@@ -195,8 +196,8 @@ export type DatabaseAdapter = {
   /**
    * Delete a role by name.
    *
-   * This write is revision-blind: it neither checks nor advances the registry
-   * revision, so it is invisible to a concurrent compare-and-swap commit.
+   * This write advances the registry revision but does not check an expected
+   * revision, so it can overwrite a concurrent compare-and-swap commit.
    * @returns true if the role was deleted, false if not found
    * @deprecated Production callers should delete via RoleRegistry.delete() and
    * saveRegistryIfRevision(), so the change goes through concurrency control.
@@ -364,8 +365,8 @@ export type DatabaseAdapter = {
   /**
    * Save a role and its rights to the database.
    *
-   * This write is revision-blind: it neither checks nor advances the registry
-   * revision, so it is invisible to a concurrent compare-and-swap commit.
+   * This write advances the registry revision but does not check an expected
+   * revision, so it can overwrite a concurrent compare-and-swap commit.
    * @returns The database ID of the saved role
    * @deprecated Production callers should mutate a registry snapshot and commit
    * it with saveRegistryIfRevision(), so the write is revision-checked.

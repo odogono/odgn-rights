@@ -21,12 +21,20 @@ export class Role {
   }
 
   /**
-   * Stop further changes to this role's rights and parents. Seal a role's
-   * parents too, or seal the whole registry with RoleRegistry.seal().
+   * Stop further changes to this role's rights and parents, and seal every
+   * role it inherits from, since their rights reach it. The parents array is
+   * frozen, so writing to it directly throws a TypeError.
    */
   seal(): this {
+    if (this._sealed) {
+      return this;
+    }
     this._sealed = true;
     this.rights.seal();
+    Object.freeze(this.parents);
+    for (const parent of this.parents) {
+      parent.seal();
+    }
     return this;
   }
 
@@ -60,11 +68,11 @@ export class Role {
    * @returns This role, whether or not the parent was present.
    */
   removeParent(role: Role): this {
-    this.assertNotSealed();
     const idx = this.parents.indexOf(role);
     if (idx === -1) {
       return this;
     }
+    this.assertNotSealed();
     this.parents.splice(idx, 1);
     const childIdx = role.children.indexOf(this);
     if (childIdx !== -1) {
@@ -79,6 +87,9 @@ export class Role {
    * Useful when setting a new inheritance list.
    */
   clearParents(): this {
+    if (this.parents.length === 0) {
+      return this;
+    }
     this.assertNotSealed();
     // Remove this role from each parent's children list
     for (const parent of this.parents) {
@@ -113,8 +124,11 @@ export class Role {
     for (const parent of this.parents) {
       list.push(...parent.allRights());
     }
-    this._cachedAllRights = list;
-    return list;
+    // A sealed role's list is shared by every reader, so freeze it.
+    this._cachedAllRights = this._sealed
+      ? (Object.freeze(list) as typeof list)
+      : list;
+    return this._cachedAllRights;
   }
 
   findRightsByTag(tag: string): Right[] {

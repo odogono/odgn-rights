@@ -865,7 +865,7 @@ describe('PostgresAdapter', () => {
       expect(loaded!.roles.map(role => role.name)).toEqual(['fresh']);
     });
 
-    test('deleteRight increments the revision only for a right a role holds', async () => {
+    test('deleteRight increments the revision when it deletes a right', async () => {
       const role = roleWithRight('holder', '/held');
       await adapter.saveRole(role);
       const heldId = role.rights.allRights()[0]!.dbId!;
@@ -875,10 +875,13 @@ describe('PostgresAdapter', () => {
       const before = await readRegistryRevision(statsSql);
 
       await adapter.deleteRight(looseId);
-      expect(await readRegistryRevision(statsSql)).toBe(before);
+      expect(await readRegistryRevision(statsSql)).toBe(before + 1);
 
       await adapter.deleteRight(heldId);
-      expect(await readRegistryRevision(statsSql)).toBe(before + 1);
+      expect(await readRegistryRevision(statsSql)).toBe(before + 2);
+
+      expect(await adapter.deleteRight(heldId)).toBe(false);
+      expect(await readRegistryRevision(statsSql)).toBe(before + 2);
       const registry = await adapter.loadRegistry();
       expect(registry.get('holder')?.rights.allRights()).toEqual([]);
     });
