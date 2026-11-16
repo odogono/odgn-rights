@@ -287,10 +287,13 @@ export class RedisAdapter extends BaseAdapter {
     const uniqueHash = this.rightUniqueHash(right);
     const uniqueKey = this.key('rights', '_unique', uniqueHash);
 
+    // Roles keep right ids, so a role holding this right changes too. Finding
+    // those roles would mean reading every role, so the revision always moves.
     const pipeline = this.redis.multi();
     pipeline.del(rightKey);
     pipeline.srem(this.key('rights', '_all'), id.toString());
     pipeline.del(uniqueKey);
+    pipeline.incr(this.key('roles', '_revision'));
     await pipeline.exec();
 
     return true;
@@ -300,52 +303,70 @@ export class RedisAdapter extends BaseAdapter {
   // Role Operations
   // ===========================================================================
 
+  /**
+   * Save one role, its direct rights and its parents, and increment the
+   * registry revision.
+   */
   async saveRole(role: Role): Promise<number> {
     if (!this.redis) {
       throw new Error('Not connected');
     }
 
     return this.transaction(async () => {
-      const roleKey = this.key('roles', role.name);
-      const existingData = await this.redis!.hgetall(roleKey);
-
-      const now = new Date().toISOString();
-      const createdAt =
-        existingData && existingData.created_at ? existingData.created_at : now;
-
-      // Save/update role hash
-      await this.redis!.hset(roleKey, {
-        created_at: createdAt,
-        name: role.name,
-        updated_at: now
-      });
-
-      // Add to roles set
-      await this.redis!.sadd(this.key('roles', '_all'), role.name);
-
-      // Clear and rebuild role rights
-      const roleRightsKey = this.key('roles', role.name, 'rights');
-      await this.redis!.del(roleRightsKey);
-
-      for (const right of role.rights.allRights()) {
-        const rightId = await this.saveRight(right);
-        await this.redis!.sadd(roleRightsKey, rightId.toString());
-      }
-
-      // Clear and rebuild parent roles
-      const roleParentsKey = this.key('roles', role.name, 'parents');
-      await this.redis!.del(roleParentsKey);
-
-      for (const parent of role.parents) {
-        await this.saveRole(parent);
-        await this.redis!.sadd(roleParentsKey, parent.name);
-      }
-
-      // Return a synthetic ID (use hash of role name since Redis doesn't have auto-increment for this)
-      // For consistency, we'll return a positive integer based on the role's position or hash
-      const allRoles = await this.redis!.smembers(this.key('roles', '_all'));
-      return allRoles.indexOf(role.name) + 1;
+      const roleId = await this.writeRole(role);
+      await this.incrementRegistryRevision();
+      return roleId;
     });
+  }
+
+  private async incrementRegistryRevision(): Promise<void> {
+    await this.redis!.incr(this.key('roles', '_revision'));
+  }
+
+  /**
+   * Write a role's keys without touching the registry revision. Callers own
+   * the revision increment.
+   */
+  private async writeRole(role: Role): Promise<number> {
+    const roleKey = this.key('roles', role.name);
+    const existingData = await this.redis!.hgetall(roleKey);
+
+    const now = new Date().toISOString();
+    const createdAt =
+      existingData && existingData.created_at ? existingData.created_at : now;
+
+    // Save/update role hash
+    await this.redis!.hset(roleKey, {
+      created_at: createdAt,
+      name: role.name,
+      updated_at: now
+    });
+
+    // Add to roles set
+    await this.redis!.sadd(this.key('roles', '_all'), role.name);
+
+    // Clear and rebuild role rights
+    const roleRightsKey = this.key('roles', role.name, 'rights');
+    await this.redis!.del(roleRightsKey);
+
+    for (const right of role.rights.allRights()) {
+      const rightId = await this.saveRight(right);
+      await this.redis!.sadd(roleRightsKey, rightId.toString());
+    }
+
+    // Clear and rebuild parent roles
+    const roleParentsKey = this.key('roles', role.name, 'parents');
+    await this.redis!.del(roleParentsKey);
+
+    for (const parent of role.parents) {
+      await this.writeRole(parent);
+      await this.redis!.sadd(roleParentsKey, parent.name);
+    }
+
+    // Return a synthetic ID (use hash of role name since Redis doesn't have auto-increment for this)
+    // For consistency, we'll return a positive integer based on the role's position or hash
+    const allRoles = await this.redis!.smembers(this.key('roles', '_all'));
+    return allRoles.indexOf(role.name) + 1;
   }
 
   private async loadRoleDirect(name: string): Promise<Role | null> {
@@ -430,19 +451,30 @@ export class RedisAdapter extends BaseAdapter {
     });
   }
 
+  /**
+   * Delete a role, and increment the registry revision when one was deleted.
+   */
   async deleteRole(name: string): Promise<boolean> {
     if (!this.redis) {
       throw new Error('Not connected');
     }
 
+    const deleted = await this.deleteRoleKeys(name);
+    if (deleted) {
+      await this.incrementRegistryRevision();
+    }
+    return deleted;
+  }
+
+  private async deleteRoleKeys(name: string): Promise<boolean> {
     const roleKey = this.key('roles', name);
-    const exists = await this.redis.exists(roleKey);
+    const exists = await this.redis!.exists(roleKey);
 
     if (!exists) {
       return false;
     }
 
-    const pipeline = this.redis.multi();
+    const pipeline = this.redis!.multi();
     pipeline.del(roleKey);
     pipeline.del(this.key('roles', name, 'rights'));
     pipeline.del(this.key('roles', name, 'parents'));
@@ -469,7 +501,7 @@ export class RedisAdapter extends BaseAdapter {
 
   private async saveRegistryContents(registry: RoleRegistry): Promise<void> {
     for (const role of this.collectPersistedRoles(registry).values()) {
-      await this.saveRole(role);
+      await this.writeRole(role);
     }
   }
 
@@ -480,6 +512,13 @@ export class RedisAdapter extends BaseAdapter {
         (await this.redis!.get(this.key('roles', '_revision'))) ?? 0
       )
     }));
+  }
+
+  async loadRegistryRevision(): Promise<number> {
+    if (!this.redis) {
+      throw new Error('Not connected');
+    }
+    return Number((await this.redis.get(this.key('roles', '_revision'))) ?? 0);
   }
 
   async saveRegistryIfRevision(
@@ -499,7 +538,7 @@ export class RedisAdapter extends BaseAdapter {
       );
       for (const currentName of currentNames) {
         if (!nextNames.has(currentName)) {
-          await this.deleteRole(currentName);
+          await this.deleteRoleKeys(currentName);
         }
       }
       await this.saveRegistryContents(registry);
@@ -585,8 +624,11 @@ export class RedisAdapter extends BaseAdapter {
       const subjectRolesKey = this.key('subjects', identifier, 'roles');
       await this.redis!.del(subjectRolesKey);
 
+      // Link roles by name. A subject's save never rewrites the role's rights
+      // or inheritance; a missing role gets a bare entry, and only then does
+      // the registry revision change.
       for (const role of subject.roles) {
-        await this.saveRole(role);
+        await this.linkRole(role.name);
         await this.redis!.sadd(subjectRolesKey, role.name);
       }
 
@@ -601,6 +643,24 @@ export class RedisAdapter extends BaseAdapter {
 
       return id;
     });
+  }
+
+  private async linkRole(name: string): Promise<void> {
+    const now = new Date().toISOString();
+    const created = await this.redis!.hsetnx(
+      this.key('roles', name),
+      'name',
+      name
+    );
+    if (!created) {
+      return;
+    }
+    await this.redis!.hset(this.key('roles', name), {
+      created_at: now,
+      updated_at: now
+    });
+    await this.redis!.sadd(this.key('roles', '_all'), name);
+    await this.incrementRegistryRevision();
   }
 
   async loadSubject(
@@ -907,7 +967,8 @@ export class RedisAdapter extends BaseAdapter {
    * helpers (saveRegistryContents, not saveRegistry). And it has no fencing
    * token, so a body that overruns the TTL can proceed alongside the next
    * holder — size registryLockTtlMs above your slowest commit. The
-   * revision-blind saveRole()/deleteRole() paths do not take it at all.
+   * single-role saveRole()/deleteRole() paths increment the revision but do
+   * not take it.
    */
   private async withRegistryLock<T>(fn: () => Promise<T>): Promise<T> {
     if (!this.redis) {
@@ -959,6 +1020,10 @@ export class RedisAdapter extends BaseAdapter {
 
     const prefix = this.options.keyPrefix ?? this.tablePrefix;
     const pattern = `${prefix}*`;
+    // The revision must keep moving forward, so a registry cached at an old
+    // revision can never match the cleared one.
+    const revisionKey = this.key('roles', '_revision');
+    const revision = Number((await this.redis.get(revisionKey)) ?? 0);
 
     // Use SCAN to find all keys matching our prefix (safer than KEYS for production)
     let cursor = '0';
@@ -984,6 +1049,7 @@ export class RedisAdapter extends BaseAdapter {
         await this.redis.del(...batch);
       }
     }
+    await this.redis.set(revisionKey, String(revision + 1));
   }
 
   async transaction<T>(

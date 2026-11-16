@@ -1,6 +1,7 @@
 import { ALL_BITS, Flags, hasBit } from './constants';
 import { normalizePath } from './helpers';
 import { Right, type ConditionContext, type RightInit } from './right';
+import { SealedError } from './sealed';
 
 export type RightJSON = {
   allow: string;
@@ -17,6 +18,7 @@ export class Rights {
   private list: Right[] = [];
   private matchCache = new Map<string, Right[]>();
   private _onChange?: () => void;
+  private _sealed = false;
 
   set onChange(cb: () => void | undefined) {
     this._onChange = cb;
@@ -26,7 +28,29 @@ export class Rights {
     this._onChange?.();
   }
 
+  /**
+   * Stop further changes to this collection and every right in it.
+   */
+  seal(): this {
+    this._sealed = true;
+    for (const right of this.list) {
+      right.seal();
+    }
+    return this;
+  }
+
+  get isSealed(): boolean {
+    return this._sealed;
+  }
+
+  private assertNotSealed(): void {
+    if (this._sealed) {
+      throw new SealedError('Rights');
+    }
+  }
+
   add(right: Right): this {
+    this.assertNotSealed();
     this.list.push(right);
     this.matchCache.clear();
     this.notify();
@@ -39,6 +63,7 @@ export class Rights {
    * @returns true if the right was found and removed, false otherwise
    */
   remove(right: Right): boolean {
+    this.assertNotSealed();
     const idx = this.list.indexOf(right);
     if (idx !== -1) {
       this.list.splice(idx, 1);
@@ -58,6 +83,7 @@ export class Rights {
   }
 
   revokeByTag(tag: string): this {
+    this.assertNotSealed();
     const toRemove = this.findByTag(tag);
     if (toRemove.length > 0) {
       this.list = this.list.filter(r => !toRemove.includes(r));
@@ -68,6 +94,7 @@ export class Rights {
   }
 
   allowByTag(tag: string, ...flags: Flags[]): this {
+    this.assertNotSealed();
     const matches = this.findByTag(tag);
     if (matches.length > 0) {
       // Support spreading an array
@@ -86,6 +113,7 @@ export class Rights {
   }
 
   prune(now: Date = new Date()): this {
+    this.assertNotSealed();
     const originalCount = this.list.length;
     this.list = this.list.filter(r => !r.isExpired(now));
     if (this.list.length !== originalCount) {
@@ -100,6 +128,7 @@ export class Rights {
   }
 
   allow(path: string, ...flags: Flags[]): this {
+    this.assertNotSealed();
     const p = normalizePath(path);
     let r = this.list.find(x => x.path === p);
     if (!r) {
@@ -121,6 +150,7 @@ export class Rights {
   }
 
   deny(path: string, flag: Flags): this {
+    this.assertNotSealed();
     const p = normalizePath(path);
     let r = this.list.find(x => x.path === p);
     if (!r) {
@@ -149,6 +179,7 @@ export class Rights {
    * rights.exclude('/files/system/**', Flags.DELETE, Flags.WRITE); // Protect system files
    */
   exclude(path: string, ...flags: Flags[]): this {
+    this.assertNotSealed();
     // Strip leading ! if present (user might write exclude('!/path'))
     const cleanPath = path.startsWith('!') ? path.slice(1) : path;
     const p = normalizePath(cleanPath);

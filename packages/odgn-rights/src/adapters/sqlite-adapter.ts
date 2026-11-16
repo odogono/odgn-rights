@@ -234,71 +234,102 @@ export class SQLiteAdapter extends BaseAdapter {
     return loadedRights;
   }
 
+  /**
+   * Delete a right. When a role held it, its role links go with it, so the
+   * registry revision is incremented in the same transaction.
+   */
   async deleteRight(id: number): Promise<boolean> {
     if (!this.db || !this.stmtDeleteRight) {
       throw new Error('Not connected');
     }
 
-    const result = this.stmtDeleteRight.run({ $id: id });
-    return result.changes > 0;
+    return this.transaction(async () => {
+      const held = this.db!.prepare(
+        `SELECT 1 FROM ${this.tables.roleRights} WHERE right_id = $id LIMIT 1`
+      ).get({ $id: id });
+      const deleted = this.stmtDeleteRight!.run({ $id: id }).changes > 0;
+      if (deleted && held) {
+        this.incrementRegistryRevision();
+      }
+      return deleted;
+    });
   }
 
   // ===========================================================================
   // Role Operations
   // ===========================================================================
 
+  /**
+   * Save one role, its direct rights and its parents, and increment the
+   * registry revision in the same transaction.
+   */
   async saveRole(role: Role): Promise<number> {
     if (!this.db) {
       throw new Error('Not connected');
     }
 
-    const { roles } = this.tables;
-
     return this.transaction(async () => {
-      let roleId: number;
-
-      const existing = this.db!.prepare(
-        `SELECT id FROM ${roles} WHERE name = $name`
-      ).get({ $name: role.name }) as { id: number } | null;
-
-      if (existing) {
-        roleId = existing.id;
-        this.db!.prepare(
-          `UPDATE ${roles} SET updated_at = datetime('now') WHERE id = $id`
-        ).run({ $id: roleId });
-      } else {
-        this.db!.prepare(`INSERT INTO ${roles} (name) VALUES ($name)`).run({
-          $name: role.name
-        });
-        const result = this.db!.query(
-          'SELECT last_insert_rowid() as id'
-        ).get() as { id: number };
-        roleId = result.id;
-      }
-
-      this.roleIdCache.set(role.name, roleId);
-
-      this.stmtDeleteRoleRights?.run({ $role_id: roleId });
-      this.stmtDeleteChildInheritance?.run({ $child_role_id: roleId });
-
-      for (const right of role.rights.allRights()) {
-        const rightId = await this.saveRight(right);
-        this.stmtInsertRoleRight?.run({
-          $right_id: rightId,
-          $role_id: roleId
-        });
-      }
-
-      for (const parent of role.parents) {
-        const parentId = await this.saveRole(parent);
-        this.stmtInsertRoleInheritance?.run({
-          $child_role_id: roleId,
-          $parent_role_id: parentId
-        });
-      }
-
+      const roleId = await this.writeRole(role);
+      this.incrementRegistryRevision();
       return roleId;
     });
+  }
+
+  /**
+   * Write a role's rows without touching the registry revision. Callers own
+   * the transaction and the revision increment.
+   */
+  private async writeRole(role: Role): Promise<number> {
+    const { roles } = this.tables;
+    let roleId: number;
+
+    const existing = this.db!.prepare(
+      `SELECT id FROM ${roles} WHERE name = $name`
+    ).get({ $name: role.name }) as { id: number } | null;
+
+    if (existing) {
+      roleId = existing.id;
+      this.db!.prepare(
+        `UPDATE ${roles} SET updated_at = datetime('now') WHERE id = $id`
+      ).run({ $id: roleId });
+    } else {
+      this.db!.prepare(`INSERT INTO ${roles} (name) VALUES ($name)`).run({
+        $name: role.name
+      });
+      const result = this.db!.query(
+        'SELECT last_insert_rowid() as id'
+      ).get() as { id: number };
+      roleId = result.id;
+    }
+
+    this.roleIdCache.set(role.name, roleId);
+
+    this.stmtDeleteRoleRights?.run({ $role_id: roleId });
+    this.stmtDeleteChildInheritance?.run({ $child_role_id: roleId });
+
+    for (const right of role.rights.allRights()) {
+      const rightId = await this.saveRight(right);
+      this.stmtInsertRoleRight?.run({
+        $right_id: rightId,
+        $role_id: roleId
+      });
+    }
+
+    for (const parent of role.parents) {
+      const parentId = await this.writeRole(parent);
+      this.stmtInsertRoleInheritance?.run({
+        $child_role_id: roleId,
+        $parent_role_id: parentId
+      });
+    }
+
+    return roleId;
+  }
+
+  private incrementRegistryRevision(): void {
+    this.db!.run(
+      `UPDATE ${this.tables.roleRegistryState} SET revision = revision + 1 WHERE singleton = 1`
+    );
   }
 
   private async loadRoleDirect(name: string): Promise<Role | null> {
@@ -377,11 +408,24 @@ export class SQLiteAdapter extends BaseAdapter {
     });
   }
 
+  /**
+   * Delete a role, and increment the registry revision when one was deleted.
+   */
   async deleteRole(name: string): Promise<boolean> {
     if (!this.db || !this.stmtDeleteRole) {
       throw new Error('Not connected');
     }
 
+    return this.transaction(async () => {
+      const deleted = this.deleteRoleRow(name);
+      if (deleted) {
+        this.incrementRegistryRevision();
+      }
+      return deleted;
+    });
+  }
+
+  private deleteRoleRow(name: string): boolean {
     const roleRow = this.stmtSelectRoleByName?.get({ $name: name }) as {
       id: number;
     } | null;
@@ -389,7 +433,7 @@ export class SQLiteAdapter extends BaseAdapter {
       this.roleIdCache.delete(name);
     }
 
-    const result = this.stmtDeleteRole.run({ $name: name });
+    const result = this.stmtDeleteRole!.run({ $name: name });
     return result.changes > 0;
   }
 
@@ -404,11 +448,9 @@ export class SQLiteAdapter extends BaseAdapter {
 
     await this.transaction(async () => {
       for (const role of this.collectPersistedRoles(registry).values()) {
-        await this.saveRole(role);
+        await this.writeRole(role);
       }
-      this.db!.run(
-        `UPDATE ${this.tables.roleRegistryState} SET revision = revision + 1 WHERE singleton = 1`
-      );
+      this.incrementRegistryRevision();
     });
   }
 
@@ -420,6 +462,18 @@ export class SQLiteAdapter extends BaseAdapter {
       ).get() as { revision: number } | undefined;
       return { registry, revision: state?.revision ?? 0 };
     });
+  }
+
+  async loadRegistryRevision(): Promise<number> {
+    if (!this.db) {
+      throw new Error('Not connected');
+    }
+    const state = this.db
+      .query(
+        `SELECT revision FROM ${this.tables.roleRegistryState} WHERE singleton = 1`
+      )
+      .get() as { revision: number } | undefined;
+    return state?.revision ?? 0;
   }
 
   async saveRegistryIfRevision(
@@ -438,7 +492,7 @@ export class SQLiteAdapter extends BaseAdapter {
       const currentNames = this.stmtSelectAllRoles!.all() as RoleRow[];
       for (const current of currentNames) {
         if (!nextNames.has(current.name)) {
-          await this.deleteRole(current.name);
+          this.deleteRoleRow(current.name);
         }
       }
       await this.saveRegistry(registry);
@@ -494,6 +548,30 @@ export class SQLiteAdapter extends BaseAdapter {
     return registry;
   }
 
+  /**
+   * The id of a stored role, for linking a subject to it. A subject's save
+   * never rewrites the role's rights or inheritance. A missing role gets a
+   * bare row, and only then does the registry revision change.
+   */
+  private linkRole(name: string): number {
+    const { roles } = this.tables;
+    const existing = this.db!.prepare(
+      `SELECT id FROM ${roles} WHERE name = $name`
+    ).get({ $name: name }) as { id: number } | null;
+    if (existing) {
+      return existing.id;
+    }
+    this.db!.prepare(`INSERT INTO ${roles} (name) VALUES ($name)`).run({
+      $name: name
+    });
+    const { id } = this.db!.query('SELECT last_insert_rowid() as id').get() as {
+      id: number;
+    };
+    this.roleIdCache.set(name, id);
+    this.incrementRegistryRevision();
+    return id;
+  }
+
   // ===========================================================================
   // Subject Operations
   // ===========================================================================
@@ -531,7 +609,7 @@ export class SQLiteAdapter extends BaseAdapter {
       this.stmtDeleteSubjectRights?.run({ $subject_id: subjectId });
 
       for (const role of subject.roles) {
-        const roleId = await this.saveRole(role);
+        const roleId = this.linkRole(role.name);
         this.stmtInsertSubjectRole?.run({
           $role_id: roleId,
           $subject_id: subjectId
@@ -834,6 +912,7 @@ export class SQLiteAdapter extends BaseAdapter {
     this.db.run(`DELETE FROM ${roleRights}`);
     this.db.run(`DELETE FROM ${roles}`);
     this.db.run(`DELETE FROM ${rights}`);
+    this.incrementRegistryRevision();
     this.roleIdCache.clear();
   }
 

@@ -228,6 +228,13 @@ export type DatabaseAdapter = {
   loadRegistry(): Promise<RoleRegistry>;
 
   /**
+   * The current registry revision, without loading any roles. Every write
+   * that can change a loaded registry advances it, so a registry loaded at a
+   * revision is still current while this returns the same number.
+   */
+  loadRegistryRevision(): Promise<number>;
+
+  /**
    * Load every role together with the revision the read was taken at.
    * Pass that revision to saveRegistryIfRevision() to commit conditionally.
    */

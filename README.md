@@ -495,7 +495,8 @@ editor.rights.allow('/content/**', Flags.READ, Flags.WRITE);
 // Save back
 await adapter.saveRegistry(registry);
 
-// Save subjects with roles
+// Save subjects with roles. This links the subject to roles by name; save
+// the roles themselves first, as above.
 const user = new Subject();
 user.memberOf(editor);
 await adapter.saveSubject('user-123', user);
@@ -584,8 +585,9 @@ All adapters implement the `DatabaseAdapter` interface:
 | `saveRegistry(registry)`           | Save entire RoleRegistry          |
 | `loadRegistry()`                   | Load RoleRegistry with all roles  |
 | `loadRegistrySnapshot()`           | Load RoleRegistry + revision      |
+| `loadRegistryRevision()`           | Read the registry revision only   |
 | `saveRegistryIfRevision(reg, rev)` | Conditional whole-registry commit |
-| `saveSubject(identifier, subject)` | Save a subject                    |
+| `saveSubject(identifier, subject)` | Save a subject, linking its roles |
 | `loadSubject(identifier)`          | Load a subject                    |
 | `deleteSubject(identifier)`        | Delete a subject                  |
 | `clear()`                          | Clear all data (for testing)      |
@@ -613,6 +615,35 @@ if (!result.committed) {
 `saveRegistryIfRevision` is atomic against competing writers on all three
 backends, and it deletes roles absent from the registry you pass — unlike
 `saveRegistry`, which is an unconditional upsert that never removes roles.
+
+Every adapter write that can change a loaded registry advances the revision:
+`saveRole`, `deleteRole` (when a role is deleted), `deleteRight` (when a role
+holds the right), `clear`, and `saveSubject` when it adds a role that was not
+stored. `saveSubject` links a subject to stored roles by name and never
+rewrites their rights or inheritance. So a reader can cache a loaded registry
+and reuse it while the revision is unchanged:
+
+```ts
+let cached: { registry: RoleRegistry; revision: number } | undefined;
+
+const currentRegistry = async () => {
+  const revision = await adapter.loadRegistryRevision();
+  if (cached?.revision !== revision) {
+    const snapshot = await adapter.loadRegistrySnapshot();
+    cached = {
+      registry: snapshot.registry.seal(),
+      revision: snapshot.revision
+    };
+  }
+  return cached.registry;
+};
+
+const subject = await adapter.loadSubject('user-123', await currentRegistry());
+```
+
+`seal()` makes a registry, its roles and their rights throw `SealedError` on
+any change, so code sharing a cached registry cannot change it for every
+other reader. Load a fresh registry to make changes.
 
 To list roles without hydrating rights and inheritance, use summaries, then
 batch-hydrate only the roles you need against the same revision:

@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `loadRegistryRevision()` on every adapter reads the registry revision
+  without loading any roles.
+- `RoleRegistry.seal()`, `Role.seal()`, `Rights.seal()` and `Right.seal()`.
+  After sealing, any change throws the new `SealedError`. Seal a registry
+  before sharing it, for example from a cache. A sealed registry still answers
+  `get()`, `getAll()` and `define()` for a role it already has.
+
+### Changed
+
+- `saveSubject` links a subject to its roles by name and no longer rewrites
+  their rights or inheritance. A role that is not stored yet is added with no
+  rights or parents. Save roles with `saveRole` or `saveRegistry` before
+  saving subjects that use them.
+- Every write that can change a loaded registry now advances the registry
+  revision: `saveRole`, `deleteRole` (when a role is deleted), `deleteRight`
+  (when a role holds the right; always, on Redis), `clear`, and `saveSubject`
+  when it adds a role. A registry loaded at a revision can therefore be
+  reused for as long as the revision is unchanged. On Redis, `clear` now keeps
+  the revision moving forward instead of resetting it.
+
 ## 0.9.1 - 2026-11-09
 
 ### Fixed

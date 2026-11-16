@@ -1,12 +1,14 @@
 import { Right } from './right';
 import { Rights } from './rights';
 import type { RoleJSON } from './role-registry';
+import { SealedError } from './sealed';
 
 export class Role {
   readonly name: string;
   readonly rights: Rights;
   readonly parents: Role[] = [];
   private children: Role[] = [];
+  private _sealed = false;
   private _cachedAllRights: Array<{
     right: Right;
     source?: { name: string; type: 'role' };
@@ -18,7 +20,30 @@ export class Role {
     this.rights.onChange = () => this.invalidateCache();
   }
 
+  /**
+   * Stop further changes to this role's rights and parents. Seal a role's
+   * parents too, or seal the whole registry with RoleRegistry.seal().
+   */
+  seal(): this {
+    this._sealed = true;
+    this.rights.seal();
+    return this;
+  }
+
+  get isSealed(): boolean {
+    return this._sealed;
+  }
+
+  private assertNotSealed(): void {
+    if (this._sealed) {
+      throw new SealedError(`Role ${this.name}`);
+    }
+  }
+
   inheritsFrom(role: Role): this {
+    this.assertNotSealed();
+    // Inheriting adds this role to the parent's children, which changes it.
+    role.assertNotSealed();
     if (role === this) {
       throw new Error(`Role ${this.name} cannot inherit from itself`);
     }
@@ -35,6 +60,7 @@ export class Role {
    * @returns This role, whether or not the parent was present.
    */
   removeParent(role: Role): this {
+    this.assertNotSealed();
     const idx = this.parents.indexOf(role);
     if (idx === -1) {
       return this;
@@ -53,6 +79,7 @@ export class Role {
    * Useful when setting a new inheritance list.
    */
   clearParents(): this {
+    this.assertNotSealed();
     // Remove this role from each parent's children list
     for (const parent of this.parents) {
       const idx = parent.children.indexOf(this);

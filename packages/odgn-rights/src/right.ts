@@ -1,5 +1,6 @@
 import { ALL_BITS, Flags, hasBit } from './constants';
 import { lettersFromMask, normalizePath, parsePath } from './helpers';
+import { SealedError } from './sealed';
 
 export type ConditionContext = unknown;
 export type Condition = (context?: ConditionContext) => boolean;
@@ -30,6 +31,7 @@ export class Right {
   private _dbId?: number;
   private _createdAt?: Date;
   private _updatedAt?: Date;
+  private _sealed = false;
 
   constructor(path: string, init?: RightInit) {
     const parsed = parsePath(path);
@@ -69,7 +71,27 @@ export class Right {
     }
   }
 
+  /**
+   * Stop further changes to this right's flags and tags. Database metadata
+   * (id and timestamps) can still be recorded.
+   */
+  seal(): this {
+    this._sealed = true;
+    return this;
+  }
+
+  get isSealed(): boolean {
+    return this._sealed;
+  }
+
+  private assertNotSealed(): void {
+    if (this._sealed) {
+      throw new SealedError(`Right ${this.path}`);
+    }
+  }
+
   allow(flag: Flags): this {
+    this.assertNotSealed();
     this.allowMask |= flag;
     // allowing a flag clears it from deny
     this.denyMask &= ~flag;
@@ -77,6 +99,7 @@ export class Right {
   }
 
   deny(flag: Flags): this {
+    this.assertNotSealed();
     this.denyMask |= flag;
     // denying a flag clears it from allow
     this.allowMask &= ~flag;
@@ -84,6 +107,7 @@ export class Right {
   }
 
   clear(): this {
+    this.assertNotSealed();
     this.allowMask = 0;
     this.denyMask = 0;
     return this;
@@ -105,11 +129,13 @@ export class Right {
   }
 
   addTag(tag: string): this {
+    this.assertNotSealed();
     this._tags.add(tag);
     return this;
   }
 
   removeTag(tag: string): this {
+    this.assertNotSealed();
     this._tags.delete(tag);
     return this;
   }

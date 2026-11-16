@@ -173,6 +173,9 @@ describe('Integration: Complete RBAC Configuration Workflow', () => {
     bob.memberOf(memberRole);
     bob.rights.allow('/bob-private/*', Flags.ALL);
 
+    // Save the role first: saving a subject only links it to its roles.
+    await adapter.saveRole(memberRole);
+
     // Save subjects
     await adapter.saveSubject('alice', alice);
     await adapter.saveSubject('bob', bob);
