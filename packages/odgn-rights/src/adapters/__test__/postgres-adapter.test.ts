@@ -14,7 +14,7 @@ import {
   type StartedTestContainer
 } from 'testcontainers';
 
-import { Flags, Right, Rights, Role, Subject } from '@/index';
+import { Flags, Right, Rights, Role, RoleRegistry, Subject } from '@/index';
 
 import { PostgresAdapter } from '../postgres-adapter';
 import { createTableNames, rightIdentityIndexName } from '../schema';
@@ -93,6 +93,19 @@ const countRights = async (sql: SQL): Promise<number> => {
     `SELECT COUNT(*)::int AS n FROM ${tables.rights}`
   );
   return (row as { n: number }).n;
+};
+
+const readRegistryRevision = async (sql: SQL): Promise<number> => {
+  const [row] = await sql.unsafe(
+    `SELECT revision FROM ${tables.roleRegistryState} WHERE singleton = 1`
+  );
+  return Number((row as { revision: number | string }).revision);
+};
+
+const roleWithRight = (name: string, path: string) => {
+  const role = new Role(name);
+  role.rights.allow(path, Flags.READ);
+  return role;
 };
 
 describe('PostgresAdapter', () => {
@@ -773,6 +786,131 @@ describe('PostgresAdapter', () => {
       });
 
       expect(await adapter.loadSubject('bound-user')).not.toBeNull();
+    });
+  });
+
+  // Callers cache a loaded registry by this revision, so every write that can
+  // change a loaded registry must move it, and nothing else should.
+  describe('Registry revision', () => {
+    test('loadRegistryRevision reads the stored revision', async () => {
+      await adapter.saveRole(roleWithRight('counted', '/counted'));
+
+      expect(await adapter.loadRegistryRevision()).toBe(
+        await readRegistryRevision(statsSql)
+      );
+    });
+
+    test('saveRole increments the revision once, parents included', async () => {
+      const parent = roleWithRight('parent', '/parent');
+      const child = roleWithRight('child', '/child').inheritsFrom(parent);
+      const before = await readRegistryRevision(statsSql);
+
+      await adapter.saveRole(child);
+
+      expect(await readRegistryRevision(statsSql)).toBe(before + 1);
+    });
+
+    test('deleteRole increments the revision only when a role is deleted', async () => {
+      await adapter.saveRole(roleWithRight('doomed', '/doomed'));
+      const before = await readRegistryRevision(statsSql);
+
+      expect(await adapter.deleteRole('doomed')).toBe(true);
+      expect(await readRegistryRevision(statsSql)).toBe(before + 1);
+
+      expect(await adapter.deleteRole('doomed')).toBe(false);
+      expect(await readRegistryRevision(statsSql)).toBe(before + 1);
+    });
+
+    test('saveRegistryIfRevision moves the revision by exactly one', async () => {
+      const first = new RoleRegistry();
+      first.define('kept').rights.allow('/kept', Flags.READ);
+      first.define('dropped').rights.allow('/dropped', Flags.READ);
+      await adapter.saveRegistry(first);
+
+      const { registry, revision } = await adapter.loadRegistrySnapshot();
+      registry.delete('dropped');
+      const commit = await adapter.saveRegistryIfRevision(registry, revision);
+
+      expect(commit).toEqual({ committed: true, revision: revision + 1 });
+      expect(await readRegistryRevision(statsSql)).toBe(revision + 1);
+    });
+
+    test('saveSubject links a stored role without rewriting it', async () => {
+      await adapter.saveRole(roleWithRight('member', '/member/**'));
+      const before = await readRegistryRevision(statsSql);
+
+      // An in-memory role with the same name but different rights, as a stale
+      // or hand-built copy would be.
+      const subject = new Subject();
+      subject.memberOf(roleWithRight('member', '/elsewhere'));
+      await adapter.saveSubject('member-user', subject);
+
+      expect(await readRegistryRevision(statsSql)).toBe(before);
+      const loaded = await adapter.loadSubject('member-user');
+      expect(loaded!.has('/member/resource', Flags.READ)).toBe(true);
+      expect(loaded!.has('/elsewhere', Flags.READ)).toBe(false);
+    });
+
+    test('saveSubject adds a missing role as a bare role and increments once', async () => {
+      const before = await readRegistryRevision(statsSql);
+
+      const subject = new Subject();
+      subject.memberOf(roleWithRight('fresh', '/fresh'));
+      await adapter.saveSubject('fresh-user', subject);
+
+      expect(await readRegistryRevision(statsSql)).toBe(before + 1);
+      const registry = await adapter.loadRegistry();
+      expect(registry.get('fresh')?.rights.allRights()).toEqual([]);
+      const loaded = await adapter.loadSubject('fresh-user');
+      expect(loaded!.roles.map(role => role.name)).toEqual(['fresh']);
+    });
+
+    test('deleteRight increments the revision when it deletes a right', async () => {
+      const role = roleWithRight('holder', '/held');
+      await adapter.saveRole(role);
+      const heldId = role.rights.allRights()[0]!.dbId!;
+      const looseId = await adapter.saveRight(
+        new Right('/loose', { allow: [Flags.READ] })
+      );
+      const before = await readRegistryRevision(statsSql);
+
+      await adapter.deleteRight(looseId);
+      expect(await readRegistryRevision(statsSql)).toBe(before + 1);
+
+      await adapter.deleteRight(heldId);
+      expect(await readRegistryRevision(statsSql)).toBe(before + 2);
+
+      expect(await adapter.deleteRight(heldId)).toBe(false);
+      expect(await readRegistryRevision(statsSql)).toBe(before + 2);
+      const registry = await adapter.loadRegistry();
+      expect(registry.get('holder')?.rights.allRights()).toEqual([]);
+    });
+
+    test('clear increments the revision', async () => {
+      await adapter.saveRole(roleWithRight('cleared', '/cleared'));
+      const before = await readRegistryRevision(statsSql);
+
+      await adapter.clear();
+
+      expect(await readRegistryRevision(statsSql)).toBe(before + 1);
+    });
+
+    test('a rolled-back bound saveRole leaves the revision unchanged', async () => {
+      const callerSql = new SQL({ max: 1, url: getConnectionUri(container) });
+      try {
+        const before = await readRegistryRevision(statsSql);
+        await callerSql
+          .begin(async tx => {
+            await adapter.bind(tx).saveRole(roleWithRight('ghost', '/ghost'));
+            throw new Error('roll back');
+          })
+          .catch(() => undefined);
+
+        expect(await readRegistryRevision(statsSql)).toBe(before);
+        expect((await adapter.loadRegistry()).get('ghost')).toBeUndefined();
+      } finally {
+        await callerSql.end();
+      }
     });
   });
 

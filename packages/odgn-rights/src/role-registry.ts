@@ -1,6 +1,7 @@
 import type { DatabaseAdapter } from './adapters/types';
 import { Rights, type RightJSON } from './rights';
 import { Role } from './role';
+import { SealedError } from './sealed';
 
 export type RoleJSON = {
   inherits?: string[];
@@ -10,9 +11,38 @@ export type RoleJSON = {
 
 export class RoleRegistry {
   private roles: Map<string, Role> = new Map();
+  private _sealed = false;
+
+  /**
+   * Stop further changes to this registry and every role in it. Use this
+   * before sharing a registry, for example from a cache, so a change made
+   * through one reader cannot reach the others. A sealed registry still
+   * answers get(), getAll() and define() for a role it already has.
+   */
+  seal(): this {
+    this._sealed = true;
+    for (const role of this.roles.values()) {
+      role.seal();
+    }
+    return this;
+  }
+
+  get isSealed(): boolean {
+    return this._sealed;
+  }
+
+  private assertNotSealed(): void {
+    if (this._sealed) {
+      throw new SealedError('RoleRegistry');
+    }
+  }
 
   define(name: string, rights?: Rights): Role {
     let role = this.roles.get(name);
+    if (role && !rights) {
+      return role;
+    }
+    this.assertNotSealed();
     if (!role) {
       role = new Role(name, rights);
       this.roles.set(name, role);
@@ -39,9 +69,20 @@ export class RoleRegistry {
    * Remove a role and every inheritance edge touching it, in both directions.
    */
   delete(name: string): boolean {
+    this.assertNotSealed();
     const removed = this.roles.get(name);
     if (!removed) {
       return false;
+    }
+    // Check every role the delete would change before changing any of them.
+    const affected = [removed, ...this.roles.values()].filter(role =>
+      role === removed
+        ? role.parents.length > 0
+        : role.parents.includes(removed)
+    );
+    const sealed = affected.find(role => role.isSealed);
+    if (sealed) {
+      throw new SealedError(`Role ${sealed.name}`);
     }
     this.roles.delete(name);
     for (const role of this.roles.values()) {

@@ -231,6 +231,32 @@ describe('RedisAdapter', () => {
     });
   });
 
+  describe('Registry revision', () => {
+    test('clear moves the revision forward instead of resetting it', async () => {
+      const { Role } = await import('../../index');
+      await adapter.saveRole(new Role('cleared'));
+      const before = await adapter.loadRegistryRevision();
+
+      await adapter.clear();
+
+      expect(await adapter.loadRegistryRevision()).toBe(before + 1);
+      expect((await adapter.loadRegistry()).getAll()).toEqual([]);
+    });
+
+    test('saveSubject adds a missing role once, listed in the registry', async () => {
+      const { Role, Subject } = await import('../../index');
+      const subject = new Subject();
+      subject.memberOf(new Role('fresh'));
+      const before = await adapter.loadRegistryRevision();
+
+      await adapter.saveSubject('fresh-user', subject);
+      await adapter.saveSubject('fresh-user', subject);
+
+      expect(await adapter.loadRegistryRevision()).toBe(before + 1);
+      expect((await adapter.loadRegistry()).get('fresh')).toBeDefined();
+    });
+  });
+
   describe('Subject operations', () => {
     test('saveSubject and loadSubject round-trip', async () => {
       const { RoleRegistry, Subject } = await import('../../index');

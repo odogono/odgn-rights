@@ -253,72 +253,112 @@ export class PostgresAdapter extends BaseAdapter {
     return loadedRights;
   }
 
+  /**
+   * Delete a right. A role holding it loses it too, so the registry revision
+   * is incremented in the same transaction whenever a right is deleted.
+   */
   async deleteRight(id: number): Promise<boolean> {
     if (!this.sql) {
       throw new Error('Not connected');
     }
 
-    const { rights: rightsTable } = this.tables;
-
-    const result = await this.sql.unsafe(
-      `DELETE FROM ${rightsTable} WHERE id = $1`,
-      [id]
-    );
-
-    return (result as unknown as { count: number }).count > 0;
+    return this.transaction(async () => {
+      await this.lockRegistryRevision();
+      const result = await this.sql!.unsafe(
+        `DELETE FROM ${this.tables.rights} WHERE id = $1`,
+        [id]
+      );
+      const deleted = (result as unknown as { count: number }).count > 0;
+      if (deleted) {
+        await this.incrementRegistryRevision();
+      }
+      return deleted;
+    });
   }
 
   // ===========================================================================
   // Role Operations
   // ===========================================================================
 
+  /**
+   * Save one role, its direct rights and its parents, and increment the
+   * registry revision in the same transaction.
+   */
   async saveRole(role: Role): Promise<number> {
     if (!this.sql) {
       throw new Error('Not connected');
     }
 
+    return this.transaction(async () => {
+      await this.lockRegistryRevision();
+      const roleId = await this.writeRole(role);
+      await this.incrementRegistryRevision();
+      return roleId;
+    });
+  }
+
+  /**
+   * Write a role's rows without touching the registry revision. Callers own
+   * the transaction and the revision increment.
+   */
+  private async writeRole(role: Role): Promise<number> {
     const { roleInheritance, roleRights, roles } = this.tables;
 
-    return this.transaction(async () => {
-      const [roleResult] = await this.sql!.unsafe(
-        `
+    const [roleResult] = await this.sql!.unsafe(
+      `
         INSERT INTO ${roles} (name)
         VALUES ($1)
         ON CONFLICT (name) DO UPDATE SET updated_at = NOW()
         RETURNING id
       `,
-        [role.name]
-      );
+      [role.name]
+    );
 
-      const roleId = roleResult.id;
+    const roleId = roleResult.id;
 
-      await this.sql!.unsafe(`DELETE FROM ${roleRights} WHERE role_id = $1`, [
-        roleId
-      ]);
+    await this.sql!.unsafe(`DELETE FROM ${roleRights} WHERE role_id = $1`, [
+      roleId
+    ]);
 
+    await this.sql!.unsafe(
+      `DELETE FROM ${roleInheritance} WHERE child_role_id = $1`,
+      [roleId]
+    );
+
+    for (const right of role.rights.allRights()) {
+      const rightId = await this.saveRight(right);
       await this.sql!.unsafe(
-        `DELETE FROM ${roleInheritance} WHERE child_role_id = $1`,
-        [roleId]
+        `INSERT INTO ${roleRights} (role_id, right_id) VALUES ($1, $2)`,
+        [roleId, rightId]
       );
+    }
 
-      for (const right of role.rights.allRights()) {
-        const rightId = await this.saveRight(right);
-        await this.sql!.unsafe(
-          `INSERT INTO ${roleRights} (role_id, right_id) VALUES ($1, $2)`,
-          [roleId, rightId]
-        );
-      }
+    for (const parent of role.parents) {
+      const parentId = await this.writeRole(parent);
+      await this.sql!.unsafe(
+        `INSERT INTO ${roleInheritance} (child_role_id, parent_role_id) VALUES ($1, $2)`,
+        [roleId, parentId]
+      );
+    }
 
-      for (const parent of role.parents) {
-        const parentId = await this.saveRole(parent);
-        await this.sql!.unsafe(
-          `INSERT INTO ${roleInheritance} (child_role_id, parent_role_id) VALUES ($1, $2)`,
-          [roleId, parentId]
-        );
-      }
+    return roleId;
+  }
 
-      return roleId;
-    });
+  /**
+   * Lock the revision row before writing role rows. Every registry write takes
+   * this lock first, so two writers always wait in the same order and cannot
+   * deadlock.
+   */
+  private async lockRegistryRevision(): Promise<void> {
+    await this.sql!.unsafe(
+      `SELECT revision FROM ${this.tables.roleRegistryState} WHERE singleton = 1 FOR UPDATE`
+    );
+  }
+
+  private async incrementRegistryRevision(): Promise<void> {
+    await this.sql!.unsafe(
+      `UPDATE ${this.tables.roleRegistryState} SET revision = revision + 1 WHERE singleton = 1`
+    );
   }
 
   async loadRoles(): Promise<Role[]> {
@@ -363,18 +403,29 @@ export class PostgresAdapter extends BaseAdapter {
     });
   }
 
+  /**
+   * Delete a role, and increment the registry revision when one was deleted.
+   */
   async deleteRole(name: string): Promise<boolean> {
     if (!this.sql) {
       throw new Error('Not connected');
     }
 
-    const { roles } = this.tables;
+    return this.transaction(async () => {
+      await this.lockRegistryRevision();
+      const deleted = await this.deleteRoleRow(name);
+      if (deleted) {
+        await this.incrementRegistryRevision();
+      }
+      return deleted;
+    });
+  }
 
-    const result = await this.sql.unsafe(
-      `DELETE FROM ${roles} WHERE name = $1`,
+  private async deleteRoleRow(name: string): Promise<boolean> {
+    const result = await this.sql!.unsafe(
+      `DELETE FROM ${this.tables.roles} WHERE name = $1`,
       [name]
     );
-
     return (result as unknown as { count: number }).count > 0;
   }
 
@@ -395,11 +446,9 @@ export class PostgresAdapter extends BaseAdapter {
         `SELECT revision FROM ${this.tables.roleRegistryState} WHERE singleton = 1 FOR UPDATE`
       );
       for (const role of this.collectPersistedRoles(registry).values()) {
-        await this.saveRole(role);
+        await this.writeRole(role);
       }
-      await this.sql!.unsafe(
-        `UPDATE ${this.tables.roleRegistryState} SET revision = revision + 1 WHERE singleton = 1`
-      );
+      await this.incrementRegistryRevision();
     });
   }
 
@@ -418,6 +467,16 @@ export class PostgresAdapter extends BaseAdapter {
       const registry = await this.loadRegistry();
       return { registry, revision: Number(state?.revision ?? 0) };
     });
+  }
+
+  async loadRegistryRevision(): Promise<number> {
+    if (!this.sql) {
+      throw new Error('Not connected');
+    }
+    const [state] = await this.sql.unsafe<Array<{ revision: number | string }>>(
+      `SELECT revision FROM ${this.tables.roleRegistryState} WHERE singleton = 1`
+    );
+    return Number(state?.revision ?? 0);
   }
 
   async saveRegistryIfRevision(
@@ -442,7 +501,7 @@ export class PostgresAdapter extends BaseAdapter {
       );
       for (const current of currentRoles) {
         if (!nextNames.has(current.name)) {
-          await this.deleteRole(current.name);
+          await this.deleteRoleRow(current.name);
         }
       }
       await this.saveRegistry(registry);
@@ -521,6 +580,13 @@ export class PostgresAdapter extends BaseAdapter {
     const { subjectRights, subjectRoles, subjects } = this.tables;
 
     return this.transaction(async () => {
+      // Resolve roles before touching subject rows: adding a missing role
+      // takes the revision lock, which every registry write takes first.
+      const roleIds: number[] = [];
+      for (const role of subject.roles) {
+        roleIds.push(await this.linkRole(role.name));
+      }
+
       const [subjectResult] = await this.sql!.unsafe(
         `
         INSERT INTO ${subjects} (identifier)
@@ -543,8 +609,7 @@ export class PostgresAdapter extends BaseAdapter {
         [subjectId]
       );
 
-      for (const role of subject.roles) {
-        const roleId = await this.saveRole(role);
+      for (const roleId of roleIds) {
         await this.sql!.unsafe(
           `INSERT INTO ${subjectRoles} (subject_id, role_id) VALUES ($1, $2)`,
           [subjectId, roleId]
@@ -561,6 +626,43 @@ export class PostgresAdapter extends BaseAdapter {
 
       return subjectId;
     });
+  }
+
+  /**
+   * The id of a stored role, for linking a subject to it. A subject's save
+   * never rewrites the role's rights or inheritance. A missing role gets a
+   * bare row, and only then does the registry revision change.
+   */
+  private async linkRole(name: string): Promise<number> {
+    const { roles } = this.tables;
+    const selectId = async () => {
+      const [row] = await this.sql!.unsafe<Array<{ id: number }>>(
+        `SELECT id FROM ${roles} WHERE name = $1`,
+        [name]
+      );
+      return row?.id;
+    };
+    const existingId = await selectId();
+    if (existingId !== undefined) {
+      return existingId;
+    }
+    await this.lockRegistryRevision();
+    const [inserted] = await this.sql!.unsafe<Array<{ id: number }>>(
+      `INSERT INTO ${roles} (name) VALUES ($1)
+       ON CONFLICT (name) DO NOTHING
+       RETURNING id`,
+      [name]
+    );
+    if (inserted) {
+      await this.incrementRegistryRevision();
+      return inserted.id;
+    }
+    // Another writer added it after the first read.
+    const raceId = await selectId();
+    if (raceId === undefined) {
+      throw new Error(`Role ${name} could not be linked`);
+    }
+    return raceId;
   }
 
   async loadSubject(
@@ -871,13 +973,22 @@ export class PostgresAdapter extends BaseAdapter {
       subjects
     } = this.tables;
 
-    await this.sql.unsafe(`DELETE FROM ${subjectRights}`);
-    await this.sql.unsafe(`DELETE FROM ${subjectRoles}`);
-    await this.sql.unsafe(`DELETE FROM ${subjects}`);
-    await this.sql.unsafe(`DELETE FROM ${roleInheritance}`);
-    await this.sql.unsafe(`DELETE FROM ${roleRights}`);
-    await this.sql.unsafe(`DELETE FROM ${roles}`);
-    await this.sql.unsafe(`DELETE FROM ${rights}`);
+    // One transaction, so the data and the revision change together.
+    await this.transaction(async () => {
+      await this.lockRegistryRevision();
+      for (const table of [
+        subjectRights,
+        subjectRoles,
+        subjects,
+        roleInheritance,
+        roleRights,
+        roles,
+        rights
+      ]) {
+        await this.sql!.unsafe(`DELETE FROM ${table}`);
+      }
+      await this.incrementRegistryRevision();
+    });
   }
 
   async transaction<T>(

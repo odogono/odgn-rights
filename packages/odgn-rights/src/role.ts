@@ -1,12 +1,14 @@
 import { Right } from './right';
 import { Rights } from './rights';
 import type { RoleJSON } from './role-registry';
+import { SealedError } from './sealed';
 
 export class Role {
   readonly name: string;
   readonly rights: Rights;
   readonly parents: Role[] = [];
   private children: Role[] = [];
+  private _sealed = false;
   private _cachedAllRights: Array<{
     right: Right;
     source?: { name: string; type: 'role' };
@@ -18,7 +20,41 @@ export class Role {
     this.rights.onChange = () => this.invalidateCache();
   }
 
+  /**
+   * Stop further changes to this role's rights and parents, and seal every
+   * role it inherits from, since their rights reach it. The parents array is
+   * frozen, so writing to it directly throws a TypeError.
+   */
+  seal(): this {
+    if (this._sealed) {
+      return this;
+    }
+    this._sealed = true;
+    this.rights.seal();
+    Object.freeze(this.parents);
+    // Drop a list built before sealing, so the next allRights() builds a
+    // frozen one.
+    this._cachedAllRights = null;
+    for (const parent of this.parents) {
+      parent.seal();
+    }
+    return this;
+  }
+
+  get isSealed(): boolean {
+    return this._sealed;
+  }
+
+  private assertNotSealed(): void {
+    if (this._sealed) {
+      throw new SealedError(`Role ${this.name}`);
+    }
+  }
+
   inheritsFrom(role: Role): this {
+    this.assertNotSealed();
+    // Inheriting adds this role to the parent's children, which changes it.
+    role.assertNotSealed();
     if (role === this) {
       throw new Error(`Role ${this.name} cannot inherit from itself`);
     }
@@ -39,6 +75,7 @@ export class Role {
     if (idx === -1) {
       return this;
     }
+    this.assertNotSealed();
     this.parents.splice(idx, 1);
     const childIdx = role.children.indexOf(this);
     if (childIdx !== -1) {
@@ -53,6 +90,10 @@ export class Role {
    * Useful when setting a new inheritance list.
    */
   clearParents(): this {
+    if (this.parents.length === 0) {
+      return this;
+    }
+    this.assertNotSealed();
     // Remove this role from each parent's children list
     for (const parent of this.parents) {
       const idx = parent.children.indexOf(this);
@@ -86,8 +127,19 @@ export class Role {
     for (const parent of this.parents) {
       list.push(...parent.allRights());
     }
+    // A sealed role's list is shared by every reader, so freeze it and its
+    // entries.
+    if (this._sealed) {
+      for (const entry of list) {
+        if (entry.source) {
+          Object.freeze(entry.source);
+        }
+        Object.freeze(entry);
+      }
+      Object.freeze(list);
+    }
     this._cachedAllRights = list;
-    return list;
+    return this._cachedAllRights;
   }
 
   findRightsByTag(tag: string): Right[] {

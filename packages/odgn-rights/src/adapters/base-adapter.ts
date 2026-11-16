@@ -196,6 +196,7 @@ export abstract class BaseAdapter implements DatabaseAdapter {
   abstract saveRegistry(registry: RoleRegistry): Promise<void>;
   abstract loadRegistry(): Promise<RoleRegistry>;
   abstract loadRegistrySnapshot(): Promise<RoleRegistrySnapshot>;
+  abstract loadRegistryRevision(): Promise<number>;
   abstract saveRegistryIfRevision(
     registry: RoleRegistry,
     expectedRevision: number

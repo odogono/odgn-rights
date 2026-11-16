@@ -547,6 +547,8 @@ describe('SQLiteAdapter', () => {
       admin.rights.allow('/admin/**', Flags.ALL);
       const editor = registry.define('editor');
       editor.rights.allow('/posts/**', Flags.WRITE);
+      // Saving a subject only links it to its roles, so save them first.
+      await adapter.saveRegistry(registry);
 
       const adminUser = new Subject();
       adminUser.memberOf(admin);
@@ -611,6 +613,8 @@ describe('SQLiteAdapter', () => {
       const registry = new RoleRegistry();
       const apiUser = registry.define('api-user');
       apiUser.rights.allow('/api/**', Flags.READ);
+      // Saving a subject only links it to its roles, so save them first.
+      await adapter.saveRegistry(registry);
 
       const user1 = new Subject();
       user1.memberOf(apiUser);
