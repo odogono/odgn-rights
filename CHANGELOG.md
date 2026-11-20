@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.11.0 - 2026-11-20
+
+### Added
+
+- `Rights.addChangeListener(listener)` calls a listener after every change to
+  the collection and returns a function that removes it. Several roles and
+  subjects can listen to the same collection; the `onChange` setter still
+  works alongside them.
+
+### Changed
+
+- **Breaking:** `Rights.parse` splits a list only where a new right starts: at
+  a line break, or at a comma followed by `+`, `-`, `:`, a line break or the
+  end of the input. A `?` is always a wildcard and no longer separates rights,
+  so write `+r:/a, +w:/b` instead of `+r:/a?+w:/b`. A comma inside a path or a
+  tag list stays in its right, so `+r:/a,/b` is now one right for the path
+  `/a,/b`; write `+r:/a, :/b` for two. See "Text Form of a List" in the README.
+- The SQLite and Postgres adapters load each role's parents in id order. A
+  role's inherited rights follow its parents' order, which can decide between
+  rights of equal priority and specificity, so a loaded registry no longer
+  depends on the order the database returns rows in.
+
+### Fixed
+
+- A `Subject` sees every change to its roles and direct rights without
+  `invalidateCache()`: rights added to or removed from a role, a role starting
+  or stopping inheriting from another at any depth, a role deleted from its
+  registry, and changes to the subject's direct rights. This includes roles
+  that share one `Rights` collection. `invalidateCache()` still works.
+
 ## 0.10.0 - 2026-11-16
 
 ### Added
