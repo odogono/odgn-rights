@@ -1,0 +1,204 @@
+{
+  "$schema": "./schema.json",
+  "description": "Checks for a subject. `roles` is loaded as a role registry from JSON, then `subject` is loaded from JSON against it.",
+  "cases": [
+    {
+      "kind": "check",
+      "name": "a role inherits its parent's rights",
+      "roles": [
+        { "name": "admin", "rights": [{ "path": "/", "allow": "*" }] },
+        { "name": "user", "rights": [], "inherits": ["admin"] }
+      ],
+      "subject": { "roles": ["user"] },
+      "checks": [{ "path": "/", "flags": "*", "expect": true }]
+    },
+    {
+      "kind": "check",
+      "name": "a more specific deny deeper in the chain wins",
+      "roles": [
+        { "name": "viewer", "rights": [{ "path": "/", "allow": "r" }] },
+        {
+          "name": "editor",
+          "rights": [{ "path": "/content", "allow": "w" }],
+          "inherits": ["viewer"]
+        },
+        {
+          "name": "restricted_editor",
+          "rights": [{ "path": "/content/private", "allow": "", "deny": "w" }],
+          "inherits": ["editor"]
+        }
+      ],
+      "subject": { "roles": ["restricted_editor"] },
+      "checks": [
+        { "path": "/anywhere", "flags": "r", "expect": true },
+        { "path": "/content/public", "flags": "w", "expect": true },
+        { "path": "/content/private", "flags": "w", "expect": false },
+        { "path": "/content/private", "flags": "r", "expect": true }
+      ]
+    },
+    {
+      "kind": "check",
+      "name": "rights from several roles combine",
+      "roles": [
+        { "name": "reader", "rights": [{ "path": "/docs", "allow": "r" }] },
+        { "name": "writer", "rights": [{ "path": "/docs", "allow": "w" }] }
+      ],
+      "subject": { "roles": ["reader", "writer"] },
+      "checks": [
+        { "path": "/docs", "flags": "r", "expect": true },
+        { "path": "/docs", "flags": "w", "expect": true },
+        { "path": "/docs", "flags": "rw", "expect": true },
+        { "path": "/docs", "flags": "c", "expect": false }
+      ]
+    },
+    {
+      "kind": "check",
+      "name": "a more specific direct right beats a role",
+      "roles": [{ "name": "admin", "rights": [{ "path": "/", "allow": "*" }] }],
+      "subject": {
+        "roles": ["admin"],
+        "rights": [{ "path": "/protected", "allow": "", "deny": "*" }]
+      },
+      "checks": [
+        { "path": "/other", "flags": "*", "expect": true },
+        { "path": "/protected", "flags": "*", "expect": false },
+        { "path": "/protected/x", "flags": "r", "expect": false }
+      ]
+    },
+    {
+      "kind": "check",
+      "name": "tie: a role's right beats an equally specific direct right",
+      "roles": [
+        { "name": "reader", "rights": [{ "path": "/docs", "allow": "r" }] }
+      ],
+      "subject": {
+        "roles": ["reader"],
+        "rights": [{ "path": "/docs", "allow": "", "deny": "r" }]
+      },
+      "checks": [{ "path": "/docs", "flags": "r", "expect": true }]
+    },
+    {
+      "kind": "check",
+      "name": "a direct right with higher priority beats a role",
+      "roles": [
+        { "name": "reader", "rights": [{ "path": "/docs", "allow": "r" }] }
+      ],
+      "subject": {
+        "roles": ["reader"],
+        "rights": [{ "path": "/docs", "allow": "", "deny": "r", "priority": 1 }]
+      },
+      "checks": [{ "path": "/docs", "flags": "r", "expect": false }]
+    },
+    {
+      "kind": "check",
+      "name": "tie: a role's own right beats an inherited one",
+      "roles": [
+        {
+          "name": "parent",
+          "rights": [{ "path": "/docs", "allow": "", "deny": "r" }]
+        },
+        {
+          "name": "child",
+          "rights": [{ "path": "/docs", "allow": "r" }],
+          "inherits": ["parent"]
+        }
+      ],
+      "subject": { "roles": ["child"] },
+      "checks": [{ "path": "/docs", "flags": "r", "expect": true }]
+    },
+    {
+      "kind": "check",
+      "name": "tie: earlier parents beat later parents",
+      "roles": [
+        {
+          "name": "deny",
+          "rights": [{ "path": "/docs", "allow": "", "deny": "r" }]
+        },
+        { "name": "allow", "rights": [{ "path": "/docs", "allow": "r" }] },
+        { "name": "allowFirst", "rights": [], "inherits": ["allow", "deny"] },
+        { "name": "denyFirst", "rights": [], "inherits": ["deny", "allow"] }
+      ],
+      "subject": { "roles": ["allowFirst", "denyFirst"] },
+      "checks": [{ "path": "/docs", "flags": "r", "expect": true }]
+    },
+    {
+      "kind": "check",
+      "name": "tie between roles follows membership order (allow first)",
+      "roles": [
+        { "name": "allow", "rights": [{ "path": "/docs", "allow": "r" }] },
+        {
+          "name": "deny",
+          "rights": [{ "path": "/docs", "allow": "", "deny": "r" }]
+        }
+      ],
+      "subject": { "roles": ["allow", "deny"] },
+      "checks": [{ "path": "/docs", "flags": "r", "expect": true }]
+    },
+    {
+      "kind": "check",
+      "name": "tie between roles follows membership order (deny first)",
+      "roles": [
+        { "name": "allow", "rights": [{ "path": "/docs", "allow": "r" }] },
+        {
+          "name": "deny",
+          "rights": [{ "path": "/docs", "allow": "", "deny": "r" }]
+        }
+      ],
+      "subject": { "roles": ["deny", "allow"] },
+      "checks": [{ "path": "/docs", "flags": "r", "expect": false }]
+    },
+    {
+      "kind": "check",
+      "name": "an unknown role name in a subject is ignored",
+      "roles": [
+        { "name": "reader", "rights": [{ "path": "/docs", "allow": "r" }] }
+      ],
+      "subject": { "roles": ["ghost", "reader"] },
+      "checks": [
+        { "path": "/docs", "flags": "r", "expect": true },
+        { "path": "/docs", "flags": "w", "expect": false }
+      ]
+    },
+    {
+      "kind": "check",
+      "name": "a subject with no roles or rights is denied everything",
+      "roles": [],
+      "subject": {},
+      "checks": [
+        { "path": "/", "flags": "r", "expect": false },
+        { "path": "/", "flags": "", "expect": true }
+      ]
+    },
+    {
+      "kind": "check",
+      "name": "validity windows apply to role rights",
+      "roles": [
+        {
+          "name": "temp",
+          "rights": [
+            {
+              "path": "/x",
+              "allow": "r",
+              "validUntil": "2025-01-01T00:00:00.000Z"
+            }
+          ]
+        }
+      ],
+      "subject": { "roles": ["temp"] },
+      "checks": [
+        {
+          "path": "/x",
+          "flags": "r",
+          "now": "2024-01-01T00:00:00.000Z",
+          "expect": true
+        },
+        {
+          "path": "/x",
+          "flags": "r",
+          "now": "2026-01-01T00:00:00.000Z",
+          "expect": false
+        }
+      ]
+    }
+  ]
+}
