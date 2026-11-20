@@ -3,7 +3,6 @@ package rights
 import (
 	"cmp"
 	"encoding/json"
-	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -426,20 +425,42 @@ func RightsFromJSON(items []RightJSON) (*Rights, error) {
 	return rs, nil
 }
 
-var listSeparators = regexp.MustCompile(`[\n\r,?]+`)
+// splitRightsText splits a list of rights in text form at line breaks, and at
+// a comma that ends a right: one whose next non-space character starts a new
+// right ('+', '-' or ':'), is a line break, or is the end of the input. Other
+// commas belong to a path pattern or a tag list.
+func splitRightsText(input string) []string {
+	var parts []string
+	start := 0
+	for i := 0; i < len(input); i++ {
+		switch input[i] {
+		case '\n', '\r':
+		case ',':
+			rest := strings.TrimLeftFunc(input[i+1:], func(r rune) bool {
+				return r != '\n' && r != '\r' && isJSSpace(r)
+			})
+			if rest != "" && !strings.ContainsRune("+-:\n\r", rune(rest[0])) {
+				continue
+			}
+		default:
+			continue
+		}
+		parts = append(parts, input[start:i])
+		start = i + 1
+	}
+	return append(parts, input[start:])
+}
 
 // ParseRights reads rights in text form, one per line or separated by commas.
-// Blank entries are skipped.
-//
-// The input is also split at every "?" and at commas inside tags, so a list
-// cannot hold a pattern with "?" or a right with more than one tag. This
-// matches the TypeScript implementation.
+// Blank entries are skipped. A comma only separates rights when a new right
+// follows it, so commas in a path pattern or tag list, and "?" wildcards, stay
+// in their right.
 func ParseRights(input string) (*Rights, error) {
 	rs := &Rights{}
 	if input == "" {
 		return rs, nil
 	}
-	for _, part := range listSeparators.Split(input, -1) {
+	for _, part := range splitRightsText(input) {
 		part = trimJS(part)
 		if part == "" {
 			continue

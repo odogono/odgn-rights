@@ -204,6 +204,25 @@ const json = rights.toJSON();
 const loaded = Rights.fromJSON(json);
 ```
 
+## Text Form of a List
+
+`Rights.parse` reads a list of rights in text form, one per line or separated by commas, the way `format()` writes them:
+
+```ts
+const rights = Rights.parse(
+  '+r:/, -w:/files/*.tmp#draft,temp\n+rw:/files/report?.txt'
+);
+// three rights: '+r:/', '-w:/files/*.tmp#draft,temp', '+rw:/files/report?.txt'
+```
+
+A comma separates two rights only when the next right starts after it with a flag sign (`+` or `-`) or `:`, or when it comes at the end of a line. Any other comma belongs to the right before it, in its path or its tags, and `?` is always the one-character wildcard.
+
+Version 0.10 and earlier split lists differently:
+
+- `?` no longer separates rights. Write `+r:/a, +w:/b` instead of `+r:/a?+w:/b`.
+- A right with no flags after a comma must start with `:`. `+r:/a,/b` is now one right for the path `/a,/b`; write `+r:/a, :/b` for two.
+- A tag that itself starts with `+`, `-` or `:` still begins a new right when it follows a comma.
+
 ## Batch Permission Checks
 
 Efficiently check multiple permissions at once with `checkMany()`.

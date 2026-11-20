@@ -373,7 +373,11 @@ export class Rights {
     if (!input) {
       return rights;
     }
-    const parts = input.split(/[\n\r,?]+/);
+    // Split at line breaks, and at a comma that ends a right: one whose next
+    // non-space character starts a new right (a flag sign or ':'), a line
+    // break, or the end of the input. Other commas belong to a path pattern or
+    // a tag list, and '?' is always a wildcard.
+    const parts = input.split(/[\n\r]+|,(?=\s*(?:[\n\r+:-]|$))/);
     for (const part of parts) {
       const trimmed = part.trim();
       if (!trimmed) {
