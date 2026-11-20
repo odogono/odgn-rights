@@ -1,0 +1,436 @@
+{
+  "$schema": "./schema.json",
+  "description": "The text form of a Right and of Rights: what each input parses to, and the text and JSON it produces.",
+  "cases": [
+    {
+      "kind": "parseRight",
+      "name": "tags sort by UTF-16 code units",
+      "input": "+r:/a#！,😀",
+      "expect": {
+        "text": "+r:/a#😀,！",
+        "json": { "allow": "r", "path": "/a", "tags": ["😀", "！"] }
+      }
+    },
+    {
+      "kind": "parseRight",
+      "name": "allow flags",
+      "input": "+rw:/",
+      "expect": { "text": "+rw:/", "json": { "allow": "rw", "path": "/" } }
+    },
+    {
+      "kind": "parseRight",
+      "name": "deny then allow",
+      "input": "-c+rw:/system",
+      "expect": {
+        "text": "-c+rw:/system",
+        "json": { "allow": "rw", "deny": "c", "path": "/system" }
+      }
+    },
+    {
+      "kind": "parseRight",
+      "name": "allow then deny prints deny first",
+      "input": "+rw-c:/system",
+      "expect": {
+        "text": "-c+rw:/system",
+        "json": { "allow": "rw", "deny": "c", "path": "/system" }
+      }
+    },
+    {
+      "kind": "parseRight",
+      "name": "star means all flags",
+      "input": "+*:/system/user/*",
+      "expect": {
+        "text": "+*:/system/user/*",
+        "json": { "allow": "*", "path": "/system/user/*" }
+      }
+    },
+    {
+      "kind": "parseRight",
+      "name": "every letter prints as star",
+      "input": "+rwcdx:/a",
+      "expect": { "text": "+*:/a", "json": { "allow": "*", "path": "/a" } }
+    },
+    {
+      "kind": "parseRight",
+      "name": "letters print in r w c d x order",
+      "input": "+xdcwr:/a",
+      "expect": { "text": "+*:/a", "json": { "allow": "*", "path": "/a" } }
+    },
+    {
+      "kind": "parseRight",
+      "name": "partial letters keep canonical order",
+      "input": "+xdr:/a",
+      "expect": { "text": "+rdx:/a", "json": { "allow": "rdx", "path": "/a" } }
+    },
+    {
+      "kind": "parseRight",
+      "name": "deny everything",
+      "input": "-rwcdx:/a",
+      "expect": {
+        "text": "-*:/a",
+        "json": { "allow": "", "deny": "*", "path": "/a" }
+      }
+    },
+    {
+      "kind": "parseRight",
+      "name": "empty flags",
+      "input": ":/a",
+      "expect": { "text": ":/a", "json": { "allow": "", "path": "/a" } }
+    },
+    {
+      "kind": "parseRight",
+      "name": "no colon means no flags",
+      "input": "/a",
+      "expect": { "text": ":/a", "json": { "allow": "", "path": "/a" } }
+    },
+    {
+      "kind": "parseRight",
+      "name": "later deny clears an earlier allow",
+      "input": "+r-r:/a",
+      "expect": {
+        "text": "-r:/a",
+        "json": { "allow": "", "deny": "r", "path": "/a" }
+      }
+    },
+    {
+      "kind": "parseRight",
+      "name": "later allow clears an earlier deny",
+      "input": "-r+r:/a",
+      "expect": { "text": "+r:/a", "json": { "allow": "r", "path": "/a" } }
+    },
+    {
+      "kind": "parseRight",
+      "name": "unknown letters are ignored",
+      "input": "+rzq:/a",
+      "expect": { "text": "+r:/a", "json": { "allow": "r", "path": "/a" } }
+    },
+    {
+      "kind": "parseRight",
+      "name": "upper-case letters are ignored",
+      "input": "+RW:/a",
+      "expect": { "text": ":/a", "json": { "allow": "", "path": "/a" } }
+    },
+    {
+      "kind": "parseRight",
+      "name": "positive priority",
+      "input": "+r:/a^100",
+      "expect": {
+        "text": "+r:/a^100",
+        "json": { "allow": "r", "path": "/a", "priority": 100 }
+      }
+    },
+    {
+      "kind": "parseRight",
+      "name": "negative priority",
+      "input": "+r:/a^-5",
+      "expect": {
+        "text": "+r:/a^-5",
+        "json": { "allow": "r", "path": "/a", "priority": -5 }
+      }
+    },
+    {
+      "kind": "parseRight",
+      "name": "zero priority is omitted",
+      "input": "+r:/a^0",
+      "expect": { "text": "+r:/a", "json": { "allow": "r", "path": "/a" } }
+    },
+    {
+      "kind": "parseRight",
+      "name": "non-numeric priority is ignored",
+      "input": "+r:/a^abc",
+      "expect": { "text": "+r:/a", "json": { "allow": "r", "path": "/a" } }
+    },
+    {
+      "kind": "parseRight",
+      "name": "priority keeps leading digits",
+      "input": "+r:/a^5x",
+      "expect": {
+        "text": "+r:/a^5",
+        "json": { "allow": "r", "path": "/a", "priority": 5 }
+      }
+    },
+    {
+      "kind": "parseRight",
+      "name": "priority with explicit plus sign",
+      "input": "+r:/a^+7",
+      "expect": {
+        "text": "+r:/a^7",
+        "json": { "allow": "r", "path": "/a", "priority": 7 }
+      }
+    },
+    {
+      "kind": "parseRight",
+      "name": "tags print sorted",
+      "input": "+r:/a#b,a",
+      "expect": {
+        "text": "+r:/a#a,b",
+        "json": { "allow": "r", "path": "/a", "tags": ["a", "b"] }
+      }
+    },
+    {
+      "kind": "parseRight",
+      "name": "tags are trimmed",
+      "input": "+r:/a# b , a",
+      "expect": {
+        "text": "+r:/a#a,b",
+        "json": { "allow": "r", "path": "/a", "tags": ["a", "b"] }
+      }
+    },
+    {
+      "kind": "parseRight",
+      "name": "duplicate tags collapse",
+      "input": "+r:/a#x,x",
+      "expect": {
+        "text": "+r:/a#x",
+        "json": { "allow": "r", "path": "/a", "tags": ["x"] }
+      }
+    },
+    {
+      "kind": "parseRight",
+      "name": "priority and tags",
+      "input": "+rw:/admin/*^50#secure",
+      "expect": {
+        "text": "+rw:/admin/*^50#secure",
+        "json": {
+          "allow": "rw",
+          "path": "/admin/*",
+          "priority": 50,
+          "tags": ["secure"]
+        }
+      }
+    },
+    {
+      "kind": "parseRight",
+      "name": "validity window prints with milliseconds",
+      "input": "+r:/a@2025-01-01T00:00:00Z/2025-12-31T00:00:00Z",
+      "expect": {
+        "text": "+r:/a@2025-01-01T00:00:00.000Z/2025-12-31T00:00:00.000Z",
+        "json": {
+          "allow": "r",
+          "path": "/a",
+          "validFrom": "2025-01-01T00:00:00.000Z",
+          "validUntil": "2025-12-31T00:00:00.000Z"
+        }
+      }
+    },
+    {
+      "kind": "parseRight",
+      "name": "date-only start is midnight UTC",
+      "input": "+r:/a@2025-01-01/*",
+      "expect": {
+        "text": "+r:/a@2025-01-01T00:00:00.000Z/*",
+        "json": {
+          "allow": "r",
+          "path": "/a",
+          "validFrom": "2025-01-01T00:00:00.000Z"
+        }
+      }
+    },
+    {
+      "kind": "parseRight",
+      "name": "offset end is converted to UTC",
+      "input": "+r:/a@*/2025-01-01T12:30:00+02:00",
+      "expect": {
+        "text": "+r:/a@*/2025-01-01T10:30:00.000Z",
+        "json": {
+          "allow": "r",
+          "path": "/a",
+          "validUntil": "2025-01-01T10:30:00.000Z"
+        }
+      }
+    },
+    {
+      "kind": "parseRight",
+      "name": "milliseconds are kept",
+      "input": "+r:/a@2025-01-01T00:00:00.123Z/*",
+      "expect": {
+        "text": "+r:/a@2025-01-01T00:00:00.123Z/*",
+        "json": {
+          "allow": "r",
+          "path": "/a",
+          "validFrom": "2025-01-01T00:00:00.123Z"
+        }
+      }
+    },
+    {
+      "kind": "parseRight",
+      "name": "unreadable dates are ignored",
+      "input": "+r:/a@garbage/also-garbage",
+      "expect": { "text": "+r:/a", "json": { "allow": "r", "path": "/a" } }
+    },
+    {
+      "kind": "parseRight",
+      "name": "stars on both sides mean no window",
+      "input": "+r:/a@*/*",
+      "expect": { "text": "+r:/a", "json": { "allow": "r", "path": "/a" } }
+    },
+    {
+      "kind": "parseRight",
+      "name": "priority, tags and validity window together",
+      "input": "+r:/a^1#t@2025-01-01T00:00:00.000Z/*",
+      "expect": {
+        "text": "+r:/a^1#t@2025-01-01T00:00:00.000Z/*",
+        "json": {
+          "allow": "r",
+          "path": "/a",
+          "priority": 1,
+          "tags": ["t"],
+          "validFrom": "2025-01-01T00:00:00.000Z"
+        }
+      }
+    },
+    {
+      "kind": "parseRight",
+      "name": "validity window that ends before it starts is rejected",
+      "input": "+r:/a@2026-01-01T00:00:00Z/2025-01-01T00:00:00Z",
+      "expect": { "error": true }
+    },
+    {
+      "kind": "parseRight",
+      "name": "validity window may start and end at the same moment",
+      "input": "+r:/a@2025-01-01T00:00:00Z/2025-01-01T00:00:00Z",
+      "expect": {
+        "text": "+r:/a@2025-01-01T00:00:00.000Z/2025-01-01T00:00:00.000Z",
+        "json": {
+          "allow": "r",
+          "path": "/a",
+          "validFrom": "2025-01-01T00:00:00.000Z",
+          "validUntil": "2025-01-01T00:00:00.000Z"
+        }
+      }
+    },
+    {
+      "kind": "parseRight",
+      "name": "negated path turns allow into deny",
+      "input": "+r:!/a",
+      "expect": {
+        "text": "-r:/a",
+        "json": { "allow": "", "deny": "r", "path": "/a" }
+      }
+    },
+    {
+      "kind": "parseRight",
+      "name": "negated path turns deny into allow",
+      "input": "-r:!/a",
+      "expect": { "text": "+r:/a", "json": { "allow": "r", "path": "/a" } }
+    },
+    {
+      "kind": "parseRight",
+      "name": "negated path swaps both",
+      "input": "-w+r:!/a",
+      "expect": {
+        "text": "-r+w:/a",
+        "json": { "allow": "w", "deny": "r", "path": "/a" }
+      }
+    },
+    {
+      "kind": "parseRight",
+      "name": "negated path with all flags",
+      "input": "+*:!/a/**",
+      "expect": {
+        "text": "-*:/a/**",
+        "json": { "allow": "", "deny": "*", "path": "/a/**" }
+      }
+    },
+    {
+      "kind": "parseRight",
+      "name": "negated path without flags",
+      "input": "!/a",
+      "expect": { "text": ":/a", "json": { "allow": "", "path": "/a" } }
+    },
+    {
+      "kind": "parseRight",
+      "name": "double negation cancels",
+      "input": "+r:!!/a",
+      "expect": { "text": "+r:/a", "json": { "allow": "r", "path": "/a" } }
+    },
+    {
+      "kind": "parseRight",
+      "name": "triple negation negates",
+      "input": "+r:!!!/a",
+      "expect": {
+        "text": "-r:/a",
+        "json": { "allow": "", "deny": "r", "path": "/a" }
+      }
+    },
+    {
+      "kind": "parseRight",
+      "name": "negated path with priority",
+      "input": "+r:!/a^10",
+      "expect": {
+        "text": "-r:/a^10",
+        "json": { "allow": "", "deny": "r", "path": "/a", "priority": 10 }
+      }
+    },
+    {
+      "kind": "parseRight",
+      "name": "path gains a leading slash and loses a trailing one",
+      "input": "+r:a/b/",
+      "expect": { "text": "+r:/a/b", "json": { "allow": "r", "path": "/a/b" } }
+    },
+    {
+      "kind": "parseRight",
+      "name": "repeated slashes collapse",
+      "input": "+r://a//b",
+      "expect": { "text": "+r:/a/b", "json": { "allow": "r", "path": "/a/b" } }
+    },
+    {
+      "kind": "parseRight",
+      "name": "dot segments are kept",
+      "input": "+r:/a/../b",
+      "expect": {
+        "text": "+r:/a/../b",
+        "json": { "allow": "r", "path": "/a/../b" }
+      }
+    },
+    {
+      "kind": "parseRight",
+      "name": "surrounding whitespace is trimmed",
+      "input": "  +r:/a  ",
+      "expect": { "text": "+r:/a", "json": { "allow": "r", "path": "/a" } }
+    },
+    {
+      "kind": "parseRight",
+      "name": "empty path is the root",
+      "input": "+r:",
+      "expect": { "text": "+r:/", "json": { "allow": "r", "path": "/" } }
+    },
+
+    {
+      "kind": "parseRights",
+      "name": "comma-separated list",
+      "input": "+r:/, -c+rw:/system, +*:/system/user/*",
+      "expect": {
+        "texts": ["+r:/", "-c+rw:/system", "+*:/system/user/*"],
+        "text": "+r:/, -c+rw:/system, +*:/system/user/*"
+      }
+    },
+    {
+      "kind": "parseRights",
+      "name": "one right per line, blank lines skipped",
+      "input": "+r:/\r\n\n-c+rw:/system\n  \n+*:/system/user/*\n",
+      "expect": {
+        "texts": ["+r:/", "-c+rw:/system", "+*:/system/user/*"],
+        "text": "+r:/, -c+rw:/system, +*:/system/user/*"
+      }
+    },
+    {
+      "kind": "parseRights",
+      "name": "empty input",
+      "input": "",
+      "expect": { "texts": [], "text": "" }
+    },
+    {
+      "kind": "parseRights",
+      "name": "a comma inside tags splits the right (known limitation)",
+      "input": "+r:/a#x,y",
+      "expect": { "texts": ["+r:/a#x", ":/y"], "text": "+r:/a#x, :/y" }
+    },
+    {
+      "kind": "parseRights",
+      "name": "a question mark splits the right (known limitation)",
+      "input": "+r:/file?.txt",
+      "expect": { "texts": ["+r:/file", ":/.txt"], "text": "+r:/file, :/.txt" }
+    }
+  ]
+}

@@ -1,0 +1,234 @@
+{
+  "$schema": "./schema.json",
+  "description": "The JSON form of Rights and of a role registry: what each input loads to, and the text and JSON it produces.",
+  "cases": [
+    {
+      "kind": "rightsFromJSON",
+      "name": "round trip keeps order and description",
+      "input": [
+        { "path": "/", "allow": "r" },
+        { "path": "/*/device/**", "allow": "c", "deny": "r" },
+        {
+          "path": "/system/user/*",
+          "allow": "*",
+          "description": "User management"
+        }
+      ],
+      "expect": {
+        "texts": ["+r:/", "-r+c:/*/device/**", "+*:/system/user/*"],
+        "json": [
+          { "path": "/", "allow": "r" },
+          { "path": "/*/device/**", "allow": "c", "deny": "r" },
+          {
+            "path": "/system/user/*",
+            "allow": "*",
+            "description": "User management"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "rightsFromJSON",
+      "name": "paths are normalised",
+      "input": [
+        { "path": "users//1/", "allow": "r" },
+        { "path": "", "allow": "w" }
+      ],
+      "expect": {
+        "texts": ["+r:/users/1", "+w:/"],
+        "json": [
+          { "path": "/users/1", "allow": "r" },
+          { "path": "/", "allow": "w" }
+        ]
+      }
+    },
+    {
+      "kind": "rightsFromJSON",
+      "name": "every letter becomes star and unknown letters are ignored",
+      "input": [
+        { "path": "/a", "allow": "xdcwr" },
+        { "path": "/b", "allow": "rq", "deny": "Z" }
+      ],
+      "expect": {
+        "texts": ["+*:/a", "+r:/b"],
+        "json": [
+          { "path": "/a", "allow": "*" },
+          { "path": "/b", "allow": "r" }
+        ]
+      }
+    },
+    {
+      "kind": "rightsFromJSON",
+      "name": "a flag both allowed and denied ends up denied",
+      "input": [{ "path": "/a", "allow": "rw", "deny": "r" }],
+      "expect": {
+        "texts": ["-r+w:/a"],
+        "json": [{ "path": "/a", "allow": "w", "deny": "r" }]
+      }
+    },
+    {
+      "kind": "rightsFromJSON",
+      "name": "missing allow means no flags",
+      "input": [{ "path": "/a", "deny": "w" }],
+      "expect": {
+        "texts": ["-w:/a"],
+        "json": [{ "path": "/a", "allow": "", "deny": "w" }]
+      }
+    },
+    {
+      "kind": "rightsFromJSON",
+      "name": "priority, tags and validity window",
+      "input": [
+        {
+          "path": "/posts/*",
+          "allow": "rw",
+          "priority": 100,
+          "tags": ["z", "a"],
+          "validFrom": "2025-01-01T00:00:00Z",
+          "validUntil": "2025-06-01"
+        },
+        { "path": "/b", "allow": "r", "priority": 0 }
+      ],
+      "expect": {
+        "texts": [
+          "+rw:/posts/*^100#a,z@2025-01-01T00:00:00.000Z/2025-06-01T00:00:00.000Z",
+          "+r:/b"
+        ],
+        "json": [
+          {
+            "path": "/posts/*",
+            "allow": "rw",
+            "priority": 100,
+            "tags": ["a", "z"],
+            "validFrom": "2025-01-01T00:00:00.000Z",
+            "validUntil": "2025-06-01T00:00:00.000Z"
+          },
+          { "path": "/b", "allow": "r" }
+        ]
+      }
+    },
+    {
+      "kind": "rightsFromJSON",
+      "name": "unreadable dates are ignored",
+      "input": [{ "path": "/a", "allow": "r", "validFrom": "not a date" }],
+      "expect": { "texts": ["+r:/a"], "json": [{ "path": "/a", "allow": "r" }] }
+    },
+    {
+      "kind": "rightsFromJSON",
+      "name": "validity window that ends before it starts is rejected",
+      "input": [
+        {
+          "path": "/a",
+          "allow": "r",
+          "validFrom": "2026-01-01T00:00:00Z",
+          "validUntil": "2025-01-01T00:00:00Z"
+        }
+      ],
+      "expect": { "error": true }
+    },
+    {
+      "kind": "rightsFromJSON",
+      "name": "a leading ! in a JSON path is part of the path, not a negation",
+      "input": [{ "path": "!/a", "allow": "r" }],
+      "expect": {
+        "texts": ["+r:/!/a"],
+        "json": [{ "path": "/!/a", "allow": "r" }]
+      }
+    },
+
+    {
+      "kind": "registryFromJSON",
+      "name": "roles with inheritance round trip",
+      "input": [
+        { "name": "viewer", "rights": [{ "path": "/", "allow": "r" }] },
+        {
+          "name": "editor",
+          "rights": [{ "path": "/posts", "allow": "w" }],
+          "inherits": ["viewer"]
+        }
+      ],
+      "expect": {
+        "json": [
+          { "name": "viewer", "rights": [{ "path": "/", "allow": "r" }] },
+          {
+            "name": "editor",
+            "rights": [{ "path": "/posts", "allow": "w" }],
+            "inherits": ["viewer"]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "registryFromJSON",
+      "name": "a role may inherit from one defined later",
+      "input": [
+        { "name": "editor", "rights": [], "inherits": ["viewer", "auditor"] },
+        { "name": "viewer", "rights": [{ "path": "/", "allow": "r" }] },
+        { "name": "auditor", "rights": [] }
+      ],
+      "expect": {
+        "json": [
+          { "name": "editor", "rights": [], "inherits": ["viewer", "auditor"] },
+          { "name": "viewer", "rights": [{ "path": "/", "allow": "r" }] },
+          { "name": "auditor", "rights": [] }
+        ]
+      }
+    },
+    {
+      "kind": "registryFromJSON",
+      "name": "a repeated role name merges rights and parents",
+      "input": [
+        { "name": "base", "rights": [] },
+        { "name": "a", "rights": [{ "path": "/x", "allow": "r" }] },
+        {
+          "name": "a",
+          "rights": [{ "path": "/y", "allow": "w" }],
+          "inherits": ["base", "base"]
+        }
+      ],
+      "expect": {
+        "json": [
+          { "name": "base", "rights": [] },
+          {
+            "name": "a",
+            "rights": [
+              { "path": "/x", "allow": "r" },
+              { "path": "/y", "allow": "w" }
+            ],
+            "inherits": ["base"]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "registryFromJSON",
+      "name": "inheriting from a missing role is rejected",
+      "input": [{ "name": "editor", "rights": [], "inherits": ["ghost"] }],
+      "expect": { "error": true }
+    },
+    {
+      "kind": "registryFromJSON",
+      "name": "a role inheriting from itself is rejected",
+      "input": [{ "name": "loop", "rights": [], "inherits": ["loop"] }],
+      "expect": { "error": true }
+    },
+    {
+      "kind": "registryFromJSON",
+      "name": "an invalid right inside a role is rejected",
+      "input": [
+        {
+          "name": "a",
+          "rights": [
+            {
+              "path": "/a",
+              "allow": "r",
+              "validFrom": "2026-01-01T00:00:00Z",
+              "validUntil": "2025-01-01T00:00:00Z"
+            }
+          ]
+        }
+      ],
+      "expect": { "error": true }
+    }
+  ]
+}

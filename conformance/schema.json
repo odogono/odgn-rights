@@ -1,0 +1,231 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://odgn.net/rights/conformance/schema.json",
+  "title": "odgn-rights conformance cases",
+  "type": "object",
+  "required": ["cases"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "description": { "type": "string" },
+    "cases": { "type": "array", "items": { "$ref": "#/$defs/case" } }
+  },
+  "$defs": {
+    "flags": {
+      "description": "Flag letters (r w c d x), '*' for all, or '' for none.",
+      "type": "string",
+      "pattern": "^(\\*|[rwcdx]*)$"
+    },
+    "time": { "description": "An ISO 8601 instant.", "type": "string" },
+    "error": {
+      "type": "object",
+      "required": ["error"],
+      "additionalProperties": false,
+      "properties": { "error": { "const": true } }
+    },
+    "rightJSON": {
+      "type": "object",
+      "required": ["path"],
+      "additionalProperties": false,
+      "properties": {
+        "path": { "type": "string" },
+        "allow": { "type": "string" },
+        "deny": { "type": "string" },
+        "description": { "type": "string" },
+        "priority": { "type": "integer" },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "validFrom": { "type": "string" },
+        "validUntil": { "type": "string" }
+      }
+    },
+    "roleJSON": {
+      "type": "object",
+      "required": ["name", "rights"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "rights": { "type": "array", "items": { "$ref": "#/$defs/rightJSON" } },
+        "inherits": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "case": {
+      "type": "object",
+      "required": ["kind", "name"],
+      "properties": {
+        "kind": {
+          "enum": [
+            "check",
+            "parseRight",
+            "parseRights",
+            "rightsFromJSON",
+            "registryFromJSON"
+          ]
+        },
+        "name": { "type": "string" }
+      },
+      "oneOf": [
+        { "$ref": "#/$defs/checkCase" },
+        { "$ref": "#/$defs/parseRightCase" },
+        { "$ref": "#/$defs/parseRightsCase" },
+        { "$ref": "#/$defs/rightsFromJSONCase" },
+        { "$ref": "#/$defs/registryFromJSONCase" }
+      ]
+    },
+    "checkCase": {
+      "description": "Build a Rights (from `rights` text or `rightsJSON`) or a Subject (from `roles` and `subject`), then run each check.",
+      "type": "object",
+      "required": ["kind", "name", "checks"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "check" },
+        "name": { "type": "string" },
+        "rights": {
+          "description": "Each entry is one Right in text form, added in order.",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "rightsJSON": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/rightJSON" }
+        },
+        "conditions": {
+          "description": "Attach a named condition to the Right at this index of `rights` or `rightsJSON`. Names: always, never, owner (context.userId equals context.ownerId), internal (context.isInternal is true), notInternal (context.isInternal is not true).",
+          "type": "object",
+          "additionalProperties": {
+            "enum": ["always", "never", "owner", "internal", "notInternal"]
+          }
+        },
+        "roles": { "type": "array", "items": { "$ref": "#/$defs/roleJSON" } },
+        "subject": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "roles": { "type": "array", "items": { "type": "string" } },
+            "rights": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/rightJSON" }
+            }
+          }
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["path", "flags", "expect"],
+            "additionalProperties": false,
+            "properties": {
+              "path": { "type": "string" },
+              "flags": { "$ref": "#/$defs/flags" },
+              "now": { "$ref": "#/$defs/time" },
+              "context": { "type": "object" },
+              "expect": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    },
+    "parseRightCase": {
+      "type": "object",
+      "required": ["kind", "name", "input", "expect"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "parseRight" },
+        "name": { "type": "string" },
+        "input": { "type": "string" },
+        "expect": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": ["text", "json"],
+              "additionalProperties": false,
+              "properties": {
+                "text": { "type": "string" },
+                "json": { "$ref": "#/$defs/rightJSON" }
+              }
+            },
+            { "$ref": "#/$defs/error" }
+          ]
+        }
+      }
+    },
+    "parseRightsCase": {
+      "type": "object",
+      "required": ["kind", "name", "input", "expect"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "parseRights" },
+        "name": { "type": "string" },
+        "input": { "type": "string" },
+        "expect": {
+          "type": "object",
+          "required": ["texts", "text"],
+          "additionalProperties": false,
+          "properties": {
+            "texts": {
+              "description": "Each Right's text form, in order.",
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "text": {
+              "description": "The whole collection's text form.",
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "rightsFromJSONCase": {
+      "type": "object",
+      "required": ["kind", "name", "input", "expect"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "rightsFromJSON" },
+        "name": { "type": "string" },
+        "input": { "type": "array", "items": { "$ref": "#/$defs/rightJSON" } },
+        "expect": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": ["texts", "json"],
+              "additionalProperties": false,
+              "properties": {
+                "texts": { "type": "array", "items": { "type": "string" } },
+                "json": {
+                  "type": "array",
+                  "items": { "$ref": "#/$defs/rightJSON" }
+                }
+              }
+            },
+            { "$ref": "#/$defs/error" }
+          ]
+        }
+      }
+    },
+    "registryFromJSONCase": {
+      "type": "object",
+      "required": ["kind", "name", "input", "expect"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "registryFromJSON" },
+        "name": { "type": "string" },
+        "input": { "type": "array", "items": { "$ref": "#/$defs/roleJSON" } },
+        "expect": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": ["json"],
+              "additionalProperties": false,
+              "properties": {
+                "json": {
+                  "type": "array",
+                  "items": { "$ref": "#/$defs/roleJSON" }
+                }
+              }
+            },
+            { "$ref": "#/$defs/error" }
+          ]
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,425 @@
+{
+  "$schema": "./schema.json",
+  "description": "Checks against a Rights collection. Each entry in `rights` is one Right in text form, parsed on its own and added in order.",
+  "cases": [
+    {
+      "kind": "check",
+      "name": "root right covers every path",
+      "rights": ["+r:/"],
+      "checks": [
+        { "path": "/", "flags": "r", "expect": true },
+        { "path": "/system/device/alpha", "flags": "r", "expect": true },
+        { "path": "/system/device/alpha", "flags": "w", "expect": false }
+      ]
+    },
+    {
+      "kind": "check",
+      "name": "more specific glob overrides the root",
+      "rights": ["+r:/", "-r+c:/*/device/**"],
+      "checks": [
+        { "path": "/system/device/alpha", "flags": "r", "expect": false },
+        { "path": "/system/device/alpha", "flags": "c", "expect": true },
+        {
+          "path": "/system/device/alpha/description",
+          "flags": "c",
+          "expect": true
+        },
+        { "path": "/system/other", "flags": "r", "expect": true }
+      ]
+    },
+    {
+      "kind": "check",
+      "name": "literal path covers itself and descendants but not siblings",
+      "rights": ["+w:/posts"],
+      "checks": [
+        { "path": "/posts", "flags": "w", "expect": true },
+        { "path": "/posts/1", "flags": "w", "expect": true },
+        { "path": "/posts/1/comments", "flags": "w", "expect": true },
+        { "path": "/postsx", "flags": "w", "expect": false },
+        { "path": "/post", "flags": "w", "expect": false }
+      ]
+    },
+    {
+      "kind": "check",
+      "name": "single star stays within one segment",
+      "rights": ["+r:/users/*"],
+      "checks": [
+        { "path": "/users/1", "flags": "r", "expect": true },
+        { "path": "/users/", "flags": "r", "expect": false },
+        { "path": "/users/1/profile", "flags": "r", "expect": false },
+        { "path": "/users", "flags": "r", "expect": false }
+      ]
+    },
+    {
+      "kind": "check",
+      "name": "double star crosses segments but needs the slash",
+      "rights": ["+r:/files/**"],
+      "checks": [
+        { "path": "/files/a", "flags": "r", "expect": true },
+        { "path": "/files/a/b/c", "flags": "r", "expect": true },
+        { "path": "/files", "flags": "r", "expect": false },
+        { "path": "/filesystem", "flags": "r", "expect": false }
+      ]
+    },
+    {
+      "kind": "check",
+      "name": "star inside a segment",
+      "rights": ["+r:/img/*.png"],
+      "checks": [
+        { "path": "/img/cat.png", "flags": "r", "expect": true },
+        { "path": "/img/.png", "flags": "r", "expect": true },
+        { "path": "/img/cat.jpg", "flags": "r", "expect": false },
+        { "path": "/img/a/cat.png", "flags": "r", "expect": false }
+      ]
+    },
+    {
+      "kind": "check",
+      "name": "question mark matches exactly one non-slash character",
+      "rights": ["+r:/file?.txt"],
+      "checks": [
+        { "path": "/file1.txt", "flags": "r", "expect": true },
+        { "path": "/file12.txt", "flags": "r", "expect": false },
+        { "path": "/file.txt", "flags": "r", "expect": false },
+        { "path": "/file/.txt", "flags": "r", "expect": false }
+      ]
+    },
+    {
+      "kind": "check",
+      "name": "regular expression characters in a pattern are literal",
+      "rights": ["+r:/a.b/(x)/[y]/*"],
+      "checks": [
+        { "path": "/a.b/(x)/[y]/1", "flags": "r", "expect": true },
+        { "path": "/aXb/(x)/[y]/1", "flags": "r", "expect": false },
+        { "path": "/a.b/x/y/1", "flags": "r", "expect": false }
+      ]
+    },
+    {
+      "kind": "check",
+      "name": "checked paths are normalised",
+      "rights": ["+r:users//1/"],
+      "checks": [
+        { "path": "/users/1", "flags": "r", "expect": true },
+        { "path": "users/1/", "flags": "r", "expect": true },
+        { "path": "//users///1", "flags": "r", "expect": true },
+        { "path": "  /users/1  ", "flags": "r", "expect": true },
+        { "path": "", "flags": "r", "expect": false }
+      ]
+    },
+    {
+      "kind": "check",
+      "name": "empty path checks the root",
+      "rights": ["+r:/"],
+      "checks": [{ "path": "", "flags": "r", "expect": true }]
+    },
+    {
+      "kind": "check",
+      "name": "several flags pass only when every one is allowed",
+      "rights": ["+rw:/docs"],
+      "checks": [
+        { "path": "/docs", "flags": "rw", "expect": true },
+        { "path": "/docs", "flags": "rwc", "expect": false },
+        { "path": "/docs", "flags": "*", "expect": false }
+      ]
+    },
+    {
+      "kind": "check",
+      "name": "a check for no flags passes",
+      "rights": [],
+      "checks": [{ "path": "/anything", "flags": "", "expect": true }]
+    },
+    {
+      "kind": "check",
+      "name": "all flags",
+      "rights": ["+*:/a"],
+      "checks": [
+        { "path": "/a", "flags": "*", "expect": true },
+        { "path": "/a", "flags": "x", "expect": true },
+        { "path": "/a", "flags": "rwcdx", "expect": true }
+      ]
+    },
+    {
+      "kind": "check",
+      "name": "a flag with no deciding right is denied",
+      "rights": ["+r:/a"],
+      "checks": [
+        { "path": "/b", "flags": "r", "expect": false },
+        { "path": "/a", "flags": "d", "expect": false }
+      ]
+    },
+    {
+      "kind": "check",
+      "name": "within one right the later sign wins",
+      "rights": ["-r+r:/x", "+r-r:/y"],
+      "checks": [
+        { "path": "/x", "flags": "r", "expect": true },
+        { "path": "/y", "flags": "r", "expect": false }
+      ]
+    },
+    {
+      "kind": "check",
+      "name": "priority beats specificity",
+      "rights": ["-w+r:/posts/123", "+rw:/posts/*^100"],
+      "checks": [
+        { "path": "/posts/123", "flags": "w", "expect": true },
+        { "path": "/posts/123", "flags": "r", "expect": true }
+      ]
+    },
+    {
+      "kind": "check",
+      "name": "equal priority falls back to specificity",
+      "rights": ["+rw:/posts/*^10", "-w:/posts/123^10"],
+      "checks": [
+        { "path": "/posts/123", "flags": "w", "expect": false },
+        { "path": "/posts/123", "flags": "r", "expect": true },
+        { "path": "/posts/456", "flags": "w", "expect": true }
+      ]
+    },
+    {
+      "kind": "check",
+      "name": "negative priority makes a fallback rule",
+      "rights": ["-w:/**^-100", "+rw:/dept/**"],
+      "checks": [
+        { "path": "/dept/x", "flags": "w", "expect": true },
+        { "path": "/other", "flags": "w", "expect": false },
+        { "path": "/other", "flags": "r", "expect": false }
+      ]
+    },
+    {
+      "kind": "check",
+      "name": "a right that does not mention a flag lets a lower right decide it",
+      "rights": ["+r:/", "-w:/a^5"],
+      "checks": [
+        { "path": "/a/b", "flags": "r", "expect": true },
+        { "path": "/a/b", "flags": "w", "expect": false },
+        { "path": "/a/b", "flags": "rw", "expect": false }
+      ]
+    },
+    {
+      "kind": "check",
+      "name": "tie on priority and specificity goes to the right added first (allow first)",
+      "rights": ["+r:/a/*", "-r:/*/b"],
+      "checks": [{ "path": "/a/b", "flags": "r", "expect": true }]
+    },
+    {
+      "kind": "check",
+      "name": "tie on priority and specificity goes to the right added first (deny first)",
+      "rights": ["-r:/*/b", "+r:/a/*"],
+      "checks": [{ "path": "/a/b", "flags": "r", "expect": false }]
+    },
+    {
+      "kind": "check",
+      "name": "a segment with only question marks counts towards specificity",
+      "rights": ["+r:/ab/*", "-r:/ab/c?"],
+      "checks": [
+        { "path": "/ab/cx", "flags": "r", "expect": false },
+        { "path": "/ab/dx", "flags": "r", "expect": true }
+      ]
+    },
+    {
+      "kind": "check",
+      "name": "specificity counts literal length after literal segments",
+      "rights": ["-r:/ab/*", "+r:/*/longer"],
+      "checks": [{ "path": "/ab/longer", "flags": "r", "expect": true }]
+    },
+    {
+      "kind": "check",
+      "name": "literal segment count outranks literal length",
+      "rights": ["-r:/*/*/averyveryverylongsegment", "+r:/a/b/*"],
+      "checks": [
+        {
+          "path": "/a/b/averyveryverylongsegment",
+          "flags": "r",
+          "expect": true
+        }
+      ]
+    },
+    {
+      "kind": "check",
+      "name": "specificity measures length in UTF-16 code units",
+      "rights": ["-r:/*/é", "+r:/ab/*"],
+      "checks": [{ "path": "/ab/é", "flags": "r", "expect": true }]
+    },
+    {
+      "kind": "check",
+      "name": "validity window bounds are inclusive",
+      "rights": ["+r:/x@2025-01-01T00:00:00.000Z/2025-12-31T23:59:59.000Z"],
+      "checks": [
+        {
+          "path": "/x",
+          "flags": "r",
+          "now": "2024-12-31T23:59:59.999Z",
+          "expect": false
+        },
+        {
+          "path": "/x",
+          "flags": "r",
+          "now": "2025-01-01T00:00:00.000Z",
+          "expect": true
+        },
+        {
+          "path": "/x",
+          "flags": "r",
+          "now": "2025-06-01T12:00:00.000Z",
+          "expect": true
+        },
+        {
+          "path": "/x",
+          "flags": "r",
+          "now": "2025-12-31T23:59:59.000Z",
+          "expect": true
+        },
+        {
+          "path": "/x",
+          "flags": "r",
+          "now": "2025-12-31T23:59:59.001Z",
+          "expect": false
+        }
+      ]
+    },
+    {
+      "kind": "check",
+      "name": "open-ended validity windows",
+      "rights": [
+        "+r:/from@2025-01-01T00:00:00.000Z/*",
+        "+r:/until@*/2025-01-01T00:00:00.000Z"
+      ],
+      "checks": [
+        {
+          "path": "/from",
+          "flags": "r",
+          "now": "2024-06-01T00:00:00.000Z",
+          "expect": false
+        },
+        {
+          "path": "/from",
+          "flags": "r",
+          "now": "2030-06-01T00:00:00.000Z",
+          "expect": true
+        },
+        {
+          "path": "/until",
+          "flags": "r",
+          "now": "2024-06-01T00:00:00.000Z",
+          "expect": true
+        },
+        {
+          "path": "/until",
+          "flags": "r",
+          "now": "2030-06-01T00:00:00.000Z",
+          "expect": false
+        }
+      ]
+    },
+    {
+      "kind": "check",
+      "name": "a right outside its validity window is skipped, not denied",
+      "rights": ["+r:/", "-r:/x@*/2025-01-01T00:00:00.000Z"],
+      "checks": [
+        {
+          "path": "/x",
+          "flags": "r",
+          "now": "2024-06-01T00:00:00.000Z",
+          "expect": false
+        },
+        {
+          "path": "/x",
+          "flags": "r",
+          "now": "2025-06-01T00:00:00.000Z",
+          "expect": true
+        }
+      ]
+    },
+    {
+      "kind": "check",
+      "name": "condition compares context attributes",
+      "rights": ["+w:/posts/*"],
+      "conditions": { "0": "owner" },
+      "checks": [
+        {
+          "path": "/posts/1",
+          "flags": "w",
+          "context": { "userId": "abc", "ownerId": "abc" },
+          "expect": true
+        },
+        {
+          "path": "/posts/1",
+          "flags": "w",
+          "context": { "userId": "abc", "ownerId": "xyz" },
+          "expect": false
+        },
+        { "path": "/posts/1", "flags": "w", "expect": false }
+      ]
+    },
+    {
+      "kind": "check",
+      "name": "a right whose condition fails is skipped and the next right decides",
+      "rights": ["+r:/", "-r:/secret"],
+      "conditions": { "1": "notInternal" },
+      "checks": [
+        {
+          "path": "/secret",
+          "flags": "r",
+          "context": { "isInternal": true },
+          "expect": true
+        },
+        {
+          "path": "/secret",
+          "flags": "r",
+          "context": { "isInternal": false },
+          "expect": false
+        },
+        { "path": "/secret", "flags": "r", "expect": false }
+      ]
+    },
+    {
+      "kind": "check",
+      "name": "a condition on a high-priority right",
+      "rights": ["-*:/**", "+*:/admin/**^100"],
+      "conditions": { "1": "internal" },
+      "checks": [
+        {
+          "path": "/admin/x",
+          "flags": "*",
+          "context": { "isInternal": true },
+          "expect": true
+        },
+        {
+          "path": "/admin/x",
+          "flags": "*",
+          "context": { "isInternal": false },
+          "expect": false
+        }
+      ]
+    },
+    {
+      "kind": "check",
+      "name": "negated path swaps allow and deny",
+      "rights": ["+*:/", "+r:!/api/internal/**", "-w:!/api/open"],
+      "checks": [
+        { "path": "/api/internal/x", "flags": "r", "expect": false },
+        { "path": "/api/internal/x", "flags": "w", "expect": true },
+        { "path": "/api/open", "flags": "w", "expect": true }
+      ]
+    },
+    {
+      "kind": "check",
+      "name": "rights given as JSON",
+      "rightsJSON": [
+        { "path": "/", "allow": "r" },
+        { "path": "/*/device/**", "allow": "c", "deny": "r" },
+        {
+          "path": "/system/user/*",
+          "allow": "*",
+          "description": "User management"
+        },
+        { "path": "/system/user/admin", "allow": "", "deny": "*" }
+      ],
+      "checks": [
+        { "path": "/system/user/1", "flags": "*", "expect": true },
+        { "path": "/system/user/admin", "flags": "r", "expect": false },
+        { "path": "/system/device/a", "flags": "r", "expect": false },
+        { "path": "/system/device/a", "flags": "c", "expect": true }
+      ]
+    }
+  ]
+}
