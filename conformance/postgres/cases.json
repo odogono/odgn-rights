@@ -1,0 +1,305 @@
+{
+  "description": "What the Postgres adapters load from saved rows. Each case inserts `rows` into empty tables made by schema.sql (or the TypeScript adapter's migrate), sets the role registry revision, then loads the registry and each listed subject. `registry` and `subject` are the JSON forms (see ../json.json); a `subject` of null means no subject is saved under that identifier. Checks run on the loaded subject as in ../subjects.json. Rows name their columns as the tables do.",
+  "cases": [
+    {
+      "name": "empty tables load an empty registry at revision 0",
+      "rows": {},
+      "expect": {
+        "revision": 0,
+        "registry": [],
+        "subjects": [{ "identifier": "nobody", "subject": null }]
+      }
+    },
+    {
+      "name": "roles load in id order with their rights in right-id order",
+      "rows": {
+        "rights": [
+          { "id": 2, "path": "/posts", "allow_mask": 2 },
+          { "id": 1, "path": "/", "allow_mask": 1 },
+          {
+            "id": 3,
+            "path": "/admin",
+            "allow_mask": 31,
+            "priority": 5,
+            "description": "Everything under admin"
+          }
+        ],
+        "roles": [
+          { "id": 2, "name": "editor" },
+          { "id": 1, "name": "viewer" },
+          { "id": 3, "name": "admin" },
+          { "id": 4, "name": "empty" }
+        ],
+        "role_rights": [
+          { "role_id": 2, "right_id": 2 },
+          { "role_id": 1, "right_id": 1 },
+          { "role_id": 3, "right_id": 3 },
+          { "role_id": 3, "right_id": 1 }
+        ],
+        "role_inheritance": [{ "child_role_id": 2, "parent_role_id": 1 }],
+        "registry_revision": 7
+      },
+      "expect": {
+        "revision": 7,
+        "registry": [
+          { "name": "viewer", "rights": [{ "path": "/", "allow": "r" }] },
+          {
+            "name": "editor",
+            "rights": [{ "path": "/posts", "allow": "w" }],
+            "inherits": ["viewer"]
+          },
+          {
+            "name": "admin",
+            "rights": [
+              { "path": "/", "allow": "r" },
+              {
+                "path": "/admin",
+                "allow": "*",
+                "priority": 5,
+                "description": "Everything under admin"
+              }
+            ]
+          },
+          { "name": "empty", "rights": [] }
+        ],
+        "subjects": []
+      }
+    },
+    {
+      "name": "a subject loads its roles in role-id order and its direct rights in right-id order",
+      "rows": {
+        "rights": [
+          { "id": 1, "path": "/", "allow_mask": 1 },
+          { "id": 2, "path": "/posts", "allow_mask": 2 },
+          { "id": 4, "path": "/posts/secret", "deny_mask": 1 },
+          { "id": 3, "path": "/drafts", "allow_mask": 3 }
+        ],
+        "roles": [
+          { "id": 2, "name": "editor" },
+          { "id": 1, "name": "viewer" }
+        ],
+        "role_rights": [
+          { "role_id": 1, "right_id": 1 },
+          { "role_id": 2, "right_id": 2 }
+        ],
+        "subjects": [
+          { "id": 1, "identifier": "alice" },
+          { "id": 2, "identifier": "bob" }
+        ],
+        "subject_roles": [
+          { "subject_id": 1, "role_id": 2 },
+          { "subject_id": 1, "role_id": 1 },
+          { "subject_id": 2, "role_id": 1 }
+        ],
+        "subject_rights": [
+          { "subject_id": 1, "right_id": 4 },
+          { "subject_id": 1, "right_id": 3 }
+        ]
+      },
+      "expect": {
+        "revision": 0,
+        "registry": [
+          { "name": "viewer", "rights": [{ "path": "/", "allow": "r" }] },
+          { "name": "editor", "rights": [{ "path": "/posts", "allow": "w" }] }
+        ],
+        "subjects": [
+          {
+            "identifier": "alice",
+            "subject": {
+              "roles": ["viewer", "editor"],
+              "rights": [
+                { "path": "/drafts", "allow": "rw" },
+                { "path": "/posts/secret", "allow": "", "deny": "r" }
+              ]
+            },
+            "checks": [
+              { "path": "/posts/1", "flags": "rw", "expect": true },
+              { "path": "/posts/secret", "flags": "r", "expect": false },
+              { "path": "/drafts/1", "flags": "w", "expect": true },
+              { "path": "/config", "flags": "w", "expect": false }
+            ]
+          },
+          {
+            "identifier": "bob",
+            "subject": { "roles": ["viewer"] },
+            "checks": [
+              { "path": "/posts/1", "flags": "r", "expect": true },
+              { "path": "/posts/1", "flags": "w", "expect": false }
+            ]
+          },
+          { "identifier": "carol", "subject": null }
+        ]
+      }
+    },
+    {
+      "name": "a saved subject with no roles or rights loads, and denies everything",
+      "rows": {
+        "subjects": [{ "id": 1, "identifier": "nobody-yet" }]
+      },
+      "expect": {
+        "revision": 0,
+        "registry": [],
+        "subjects": [
+          {
+            "identifier": "nobody-yet",
+            "subject": {},
+            "checks": [{ "path": "/", "flags": "r", "expect": false }]
+          }
+        ]
+      }
+    },
+    {
+      "name": "a subject inherits through its roles' parents",
+      "rows": {
+        "rights": [
+          { "id": 1, "path": "/", "allow_mask": 1 },
+          { "id": 2, "path": "/admin", "allow_mask": 31 }
+        ],
+        "roles": [
+          { "id": 1, "name": "viewer" },
+          { "id": 2, "name": "operator" },
+          { "id": 3, "name": "admin" }
+        ],
+        "role_rights": [
+          { "role_id": 1, "right_id": 1 },
+          { "role_id": 3, "right_id": 2 }
+        ],
+        "role_inheritance": [
+          { "child_role_id": 2, "parent_role_id": 1 },
+          { "child_role_id": 3, "parent_role_id": 2 }
+        ],
+        "subjects": [{ "id": 1, "identifier": "root" }],
+        "subject_roles": [{ "subject_id": 1, "role_id": 3 }]
+      },
+      "expect": {
+        "revision": 0,
+        "registry": [
+          { "name": "viewer", "rights": [{ "path": "/", "allow": "r" }] },
+          { "name": "operator", "rights": [], "inherits": ["viewer"] },
+          {
+            "name": "admin",
+            "rights": [{ "path": "/admin", "allow": "*" }],
+            "inherits": ["operator"]
+          }
+        ],
+        "subjects": [
+          {
+            "identifier": "root",
+            "subject": { "roles": ["admin"] },
+            "checks": [
+              { "path": "/anything", "flags": "r", "expect": true },
+              { "path": "/admin/users", "flags": "*", "expect": true },
+              { "path": "/anything", "flags": "w", "expect": false }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "priority, tags and validity windows load from their columns",
+      "rows": {
+        "rights": [
+          {
+            "id": 1,
+            "path": "/reports",
+            "allow_mask": 1,
+            "tags": "[\"audit\",\"finance\"]"
+          },
+          { "id": 2, "path": "/reports/*", "deny_mask": 1, "priority": 10 },
+          {
+            "id": 3,
+            "path": "/promo",
+            "allow_mask": 1,
+            "valid_from": "2025-01-01T00:00:00Z",
+            "valid_until": "2025-02-01T00:00:00Z"
+          }
+        ],
+        "subjects": [{ "id": 1, "identifier": "analyst" }],
+        "subject_rights": [
+          { "subject_id": 1, "right_id": 1 },
+          { "subject_id": 1, "right_id": 2 },
+          { "subject_id": 1, "right_id": 3 }
+        ]
+      },
+      "expect": {
+        "revision": 0,
+        "registry": [],
+        "subjects": [
+          {
+            "identifier": "analyst",
+            "subject": {
+              "rights": [
+                {
+                  "path": "/reports",
+                  "allow": "r",
+                  "tags": ["audit", "finance"]
+                },
+                {
+                  "path": "/reports/*",
+                  "allow": "",
+                  "deny": "r",
+                  "priority": 10
+                },
+                {
+                  "path": "/promo",
+                  "allow": "r",
+                  "validFrom": "2025-01-01T00:00:00.000Z",
+                  "validUntil": "2025-02-01T00:00:00.000Z"
+                }
+              ]
+            },
+            "checks": [
+              { "path": "/reports", "flags": "r", "expect": true },
+              { "path": "/reports/q1", "flags": "r", "expect": false },
+              {
+                "path": "/promo",
+                "flags": "r",
+                "now": "2025-01-15T00:00:00Z",
+                "expect": true
+              },
+              {
+                "path": "/promo",
+                "flags": "r",
+                "now": "2025-03-01T00:00:00Z",
+                "expect": false
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "unknown mask bits and unreadable tags are ignored",
+      "rows": {
+        "rights": [
+          { "id": 1, "path": "/", "allow_mask": 33, "deny_mask": 64 },
+          { "id": 2, "path": "/x", "allow_mask": 2, "tags": "not json" }
+        ],
+        "subjects": [{ "id": 1, "identifier": "s" }],
+        "subject_rights": [
+          { "subject_id": 1, "right_id": 1 },
+          { "subject_id": 1, "right_id": 2 }
+        ]
+      },
+      "expect": {
+        "revision": 0,
+        "registry": [],
+        "subjects": [
+          {
+            "identifier": "s",
+            "subject": {
+              "rights": [
+                { "path": "/", "allow": "r" },
+                { "path": "/x", "allow": "w" }
+              ]
+            },
+            "checks": [
+              { "path": "/a", "flags": "r", "expect": true },
+              { "path": "/x/1", "flags": "w", "expect": true }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,5 +1,7 @@
 # Runs both implementations against the shared conformance cases.
-# The Postgres and Redis adapter tests need Docker, so they are left out.
+# The Postgres and Redis adapter tests that start their own Docker containers
+# are left out; the shared Postgres adapter cases run against a service
+# container instead.
 name: CI
 
 on:
@@ -10,6 +12,19 @@ on:
 jobs:
   typescript:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+    env:
+      ODGN_RIGHTS_TEST_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
@@ -30,6 +45,38 @@ jobs:
         with:
           go-version: ${{ matrix.go }}
           cache-dependency-path: go/go.mod
+      - run: test -z "$(gofmt -l .)"
+      - run: go vet ./...
+      - run: go test -race ./...
+
+  # The Postgres adapter is its own module, so the core keeps no dependencies.
+  go-postgres:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go: ['1.23', 'stable']
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+    env:
+      ODGN_RIGHTS_TEST_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/postgres
+    defaults:
+      run:
+        working-directory: go/postgres
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ matrix.go }}
+          cache-dependency-path: go/postgres/go.sum
       - run: test -z "$(gofmt -l .)"
       - run: go vet ./...
       - run: go test -race ./...
