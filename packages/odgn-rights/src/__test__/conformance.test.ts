@@ -8,6 +8,7 @@ import {
   Rights,
   RoleRegistry,
   Subject,
+  normalizePath,
   type Condition,
   type RightJSON,
   type RoleJSON,
@@ -28,11 +29,21 @@ type Check = {
   path: string;
 };
 
+type Change = {
+  addRights?: RightJSON[];
+  inheritFrom?: string;
+  removeParent?: string;
+  removeRights?: string[];
+  role?: string;
+};
+
+type Step = Check | { change: Change };
+
 type Expectation<T> = T | { error: true };
 
 type Case =
   | {
-      checks: Check[];
+      checks: Step[];
       conditions?: Record<string, string>;
       kind: 'check';
       name: string;
@@ -102,7 +113,9 @@ const withCondition = (right: Right, condition: Condition): Right => {
 
 type Checker = { has: Rights['has'] };
 
-const buildChecker = (c: Extract<Case, { kind: 'check' }>): Checker => {
+type Built = { checker: Checker; registry?: RoleRegistry; subject?: Subject };
+
+const buildChecker = (c: Extract<Case, { kind: 'check' }>): Built => {
   if (c.subject) {
     if (c.conditions) {
       throw new Error(
@@ -110,7 +123,8 @@ const buildChecker = (c: Extract<Case, { kind: 'check' }>): Checker => {
       );
     }
     const registry = RoleRegistry.fromJSON(c.roles ?? []);
-    return Subject.fromJSON(c.subject, registry);
+    const subject = Subject.fromJSON(c.subject, registry);
+    return { checker: subject, registry, subject };
   }
   const list = c.rightsJSON
     ? Rights.fromJSON(c.rightsJSON).allRights()
@@ -120,14 +134,55 @@ const buildChecker = (c: Extract<Case, { kind: 'check' }>): Checker => {
     const name = c.conditions?.[String(index)];
     rights.add(name ? withCondition(right, CONDITIONS[name]!) : right);
   });
-  return rights;
+  return { checker: rights };
+};
+
+// Change a role of the case's registry, or the subject's direct rights.
+const applyChange = ({ registry, subject }: Built, change: Change) => {
+  if (!registry || !subject) {
+    throw new Error('a change needs a case with a subject');
+  }
+  const mustGet = (name: string) => {
+    const role = registry.get(name);
+    if (!role) {
+      throw new Error(`unknown role ${name}`);
+    }
+    return role;
+  };
+  const role = change.role === undefined ? undefined : mustGet(change.role);
+  const rights = role ? role.rights : subject.rights;
+  for (const path of change.removeRights ?? []) {
+    const p = normalizePath(path);
+    for (const right of rights.allRights().filter(r => r.path === p)) {
+      rights.remove(right);
+    }
+  }
+  for (const right of Rights.fromJSON(change.addRights ?? []).allRights()) {
+    rights.add(right);
+  }
+  if (change.removeParent !== undefined || change.inheritFrom !== undefined) {
+    if (!role) {
+      throw new Error('inheritFrom and removeParent need a role');
+    }
+    if (change.removeParent !== undefined) {
+      role.removeParent(mustGet(change.removeParent));
+    }
+    if (change.inheritFrom !== undefined) {
+      role.inheritsFrom(mustGet(change.inheritFrom));
+    }
+  }
 };
 
 const runCase = (c: Case) => {
   switch (c.kind) {
     case 'check': {
-      const checker = buildChecker(c);
+      const built = buildChecker(c);
+      const { checker } = built;
       for (const check of c.checks) {
+        if ('change' in check) {
+          applyChange(built, check.change);
+          continue;
+        }
         const context = check.now
           ? { ...check.context, _now: new Date(check.now) }
           : check.context;

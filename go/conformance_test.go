@@ -14,12 +14,26 @@ import (
 
 const conformanceDir = "../conformance"
 
+// conformanceCheck is one step of a check case: a check, or a change made
+// between checks when Change is set.
 type conformanceCheck struct {
-	Path    string         `json:"path"`
-	Flags   string         `json:"flags"`
-	Now     string         `json:"now"`
-	Context map[string]any `json:"context"`
-	Expect  bool           `json:"expect"`
+	Change  *conformanceChange `json:"change"`
+	Path    string             `json:"path"`
+	Flags   string             `json:"flags"`
+	Now     string             `json:"now"`
+	Context map[string]any     `json:"context"`
+	Expect  bool               `json:"expect"`
+}
+
+// conformanceChange changes a role of the case's registry, or the subject's
+// direct rights when Role is absent. Names are pointers so an empty name is
+// still a role, as in TypeScript.
+type conformanceChange struct {
+	Role         *string     `json:"role"`
+	AddRights    []RightJSON `json:"addRights"`
+	RemoveRights []string    `json:"removeRights"`
+	InheritFrom  *string     `json:"inheritFrom"`
+	RemoveParent *string     `json:"removeParent"`
 }
 
 type conformanceCase struct {
@@ -101,8 +115,12 @@ func runConformanceCase(t *testing.T, c conformanceCase) {
 	t.Helper()
 	switch c.Kind {
 	case "check":
-		ch := buildChecker(t, c)
+		ch, rr := buildChecker(t, c)
 		for _, check := range c.Checks {
+			if check.Change != nil {
+				applyChange(t, ch, rr, *check.Change)
+				continue
+			}
 			var opts []CheckOption
 			if check.Now != "" {
 				now, ok := parseTime(check.Now)
@@ -204,7 +222,7 @@ func runConformanceCase(t *testing.T, c conformanceCase) {
 	}
 }
 
-func buildChecker(t *testing.T, c conformanceCase) checker {
+func buildChecker(t *testing.T, c conformanceCase) (checker, *RoleRegistry) {
 	t.Helper()
 	if c.Subject != nil {
 		if len(c.Conditions) > 0 {
@@ -218,7 +236,7 @@ func buildChecker(t *testing.T, c conformanceCase) checker {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return s
+		return s, rr
 	}
 	var list []*Right
 	if c.RightsJSON != nil {
@@ -247,7 +265,60 @@ func buildChecker(t *testing.T, c conformanceCase) checker {
 		}
 		list[i].condition = cond
 	}
-	return NewRights(list...)
+	return NewRights(list...), nil
+}
+
+func applyChange(t *testing.T, ch checker, rr *RoleRegistry, change conformanceChange) {
+	t.Helper()
+	s, ok := ch.(*Subject)
+	if !ok || rr == nil {
+		t.Fatal("a change needs a case with a subject")
+	}
+	mustGet := func(name string) *Role {
+		role := rr.Get(name)
+		if role == nil {
+			t.Fatalf("unknown role %q", name)
+		}
+		return role
+	}
+	var role *Role
+	rs := s.Rights()
+	if change.Role != nil {
+		role = mustGet(*change.Role)
+		rs = role.Rights()
+	}
+	for _, path := range change.RemoveRights {
+		p := NormalizePath(path)
+		for _, r := range rs.List() {
+			if r.Path() == p {
+				if _, err := rs.Remove(r); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+	}
+	added, err := RightsFromJSON(change.AddRights)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range added.List() {
+		if err := rs.Add(r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if (change.RemoveParent != nil || change.InheritFrom != nil) && role == nil {
+		t.Fatal("inheritFrom and removeParent need a role")
+	}
+	if change.RemoveParent != nil {
+		if err := role.RemoveParent(mustGet(*change.RemoveParent)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if change.InheritFrom != nil {
+		if err := role.InheritFrom(mustGet(*change.InheritFrom)); err != nil {
+			t.Fatal(err)
+		}
+	}
 }
 
 func mustUnmarshal(t *testing.T, data json.RawMessage, v any) {

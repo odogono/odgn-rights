@@ -55,7 +55,6 @@ Where Go differs from TypeScript:
 - Dates are read only in ISO 8601 form (a date, optionally with a time and offset). TypeScript also accepts the engine's other formats, such as `Jan 1 2025`; Go ignores them, as both ignore unreadable dates.
 - A `?` in a path pattern matches one character. In TypeScript it matches one UTF-16 code unit, so there a character outside the Basic Multilingual Plane, such as an emoji, needs `??`.
 - Priorities are integers. TypeScript's JSON loader also accepts fractional priorities; Go rejects JSON that has them.
-- Checks never see a stale view of a subject's roles; TypeScript caches a subject's rights until `invalidateCache()` is called.
 - Explanations and the CLI are not ported yet, and only the Postgres adapter is, for reading (see below).
 
 ## Loading from Postgres

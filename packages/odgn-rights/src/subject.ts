@@ -17,6 +17,12 @@ export class Subject {
     Right,
     { name?: string; type: 'direct' | 'role' }
   > | null = null;
+  // Each role's version when the aggregate was built, in the order of roles.
+  private _roleVersions: number[] = [];
+
+  constructor() {
+    this.rights.addChangeListener(() => this.invalidateCache());
+  }
 
   toJSON(): SubjectJSON {
     const out: SubjectJSON = {};
@@ -105,7 +111,8 @@ export class Subject {
     meta: Map<Right, { name?: string; type: 'direct' | 'role' }>;
     rights: Rights;
   } {
-    if (!this._aggregate) {
+    if (!this._aggregate || this.rolesChanged()) {
+      this._roleVersions = this.roles.map(role => role.version);
       this._aggregate = new Rights();
       this._aggregateMeta = new Map<
         Right,
@@ -129,6 +136,20 @@ export class Subject {
       }
     }
     return { meta: this._aggregateMeta!, rights: this._aggregate };
+  }
+
+  // A role's version also moves when a role it inherits from changes, so only
+  // the subject's own roles need comparing.
+  private rolesChanged(): boolean {
+    if (this.roles.length !== this._roleVersions.length) {
+      return true;
+    }
+    for (let i = 0; i < this.roles.length; i++) {
+      if (this.roles[i]!.version !== this._roleVersions[i]) {
+        return true;
+      }
+    }
+    return false;
   }
 
   // Convenience helpers

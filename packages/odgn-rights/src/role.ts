@@ -9,6 +9,7 @@ export class Role {
   readonly parents: Role[] = [];
   private children: Role[] = [];
   private _sealed = false;
+  private _version = 0;
   private _cachedAllRights: Array<{
     right: Right;
     source?: { name: string; type: 'role' };
@@ -17,7 +18,7 @@ export class Role {
   constructor(name: string, rights?: Rights) {
     this.name = name;
     this.rights = rights ?? new Rights();
-    this.rights.onChange = () => this.invalidateCache();
+    this.rights.addChangeListener(() => this.invalidateCache());
   }
 
   /**
@@ -148,7 +149,17 @@ export class Role {
       .filter(r => r.hasTag(tag));
   }
 
+  /**
+   * A number that goes up whenever this role's rights or inheritance change,
+   * including a change to any role it inherits from. A subject compares it with
+   * the value it last built from to tell whether its cached rights are stale.
+   */
+  get version(): number {
+    return this._version;
+  }
+
   invalidateCache(): void {
+    this._version++;
     this._cachedAllRights = null;
     for (const child of this.children) {
       child.invalidateCache();
