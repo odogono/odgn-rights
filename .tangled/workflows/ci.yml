@@ -1,0 +1,25 @@
+# Runs both implementations against the shared conformance cases.
+# Database adapter tests need Docker, so they are left out.
+when:
+  - event: push
+    branch: '**'
+  - event: pull_request
+    branch: main
+
+engine: microvm
+image: nixos
+
+dependencies:
+  - unstable#go
+  - unstable#bun
+  - gcc
+
+environment:
+  # go test -race needs cgo.
+  CGO_ENABLED: '1'
+
+steps:
+  - name: typescript tests
+    command: bun install --frozen-lockfile && bun test packages/odgn-rights/src --path-ignore-patterns 'packages/odgn-rights/src/adapters/**'
+  - name: go vet and test
+    command: cd go && test -z "$(gofmt -l .)" && go vet ./... && go test -race ./...

@@ -15,6 +15,10 @@ import { Flags, Right, Rights } from 'odgn-rights'; // when packaged
 // or locally: import { Rights, Right, Flags } from './src/index.ts';
 ```
 
+## Go
+
+A Go port lives in [`go/`](go/) as `odgn.net/rights`. Both implementations run the shared cases in [`conformance/`](conformance/), so they give the same answer for every check and read and write the same text and JSON forms.
+
 ## Quick Start
 
 ```ts

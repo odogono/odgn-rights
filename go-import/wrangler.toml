@@ -1,0 +1,9 @@
+# Deploy with: bunx wrangler deploy --config go-import/wrangler.toml
+name = "odgn-rights-go-import"
+main = "worker.ts"
+compatibility_date = "2026-11-01"
+workers_dev = false
+routes = [
+  { pattern = "odgn.net/rights", zone_name = "odgn.net" },
+  { pattern = "odgn.net/rights/*", zone_name = "odgn.net" },
+]

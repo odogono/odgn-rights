@@ -13,6 +13,9 @@ This is a monorepo using Bun workspaces with two packages:
 - `packages/playground/` - Interactive browser-based testing environment (private, not published)
   - `packages/playground/src/` - React application source
   - `packages/playground/e2e/` - Playwright E2E tests
+- `go/` - Go port of the core library (module `odgn.net/rights`)
+- `conformance/` - Language-neutral JSON cases that both implementations must pass; a change to decision rules or the text/JSON forms needs new cases here
+- `go-import/` - Cloudflare Worker serving the `odgn.net/rights` Go import path
 - Root config: `tsconfig.json`, `eslint.config.js`, `.prettierrc`, `playwright.config.ts`
 - Root package: `package.json` (workspace config), `bun.lock`
 
@@ -57,7 +60,7 @@ This is a monorepo using Bun workspaces with two packages:
   - Clear summary and motivation; reference issues if applicable.
   - Tests for new/changed behavior.
   - Notes on API changes and examples in `README.md` when relevant.
-- CI expectations: PRs should be green under `bun test packages/odgn-rights/src`.
+- CI expectations: PRs should be green under `bun test packages/odgn-rights/src` and, from `go/`, `go test -race ./...` (see `.tangled/workflows/ci.yml`).
 
 ## Security & Configuration
 
