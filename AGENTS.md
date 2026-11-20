@@ -60,7 +60,7 @@ This is a monorepo using Bun workspaces with two packages:
   - Clear summary and motivation; reference issues if applicable.
   - Tests for new/changed behavior.
   - Notes on API changes and examples in `README.md` when relevant.
-- CI expectations: PRs should be green under `bun test packages/odgn-rights/src` and, from `go/`, `go test -race ./...` (see `.tangled/workflows/ci.yml`).
+- CI expectations: PRs should be green under `bun test packages/odgn-rights/src` and, from `go/`, `go test -race ./...` (see `.github/workflows/ci.yml`).
 
 ## Security & Configuration
 

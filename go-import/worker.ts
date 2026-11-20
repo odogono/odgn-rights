@@ -5,7 +5,7 @@
 // for older toolchains). Browsers are sent to the package documentation.
 
 const MODULE = 'odgn.net/rights';
-const REPO = 'https://tangled.org/alex.veenenda.al/odgn-rights';
+const REPO = 'https://github.com/odogono/odgn-rights';
 const SUBDIR = 'go';
 
 const page = `<!doctype html>

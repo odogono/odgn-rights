@@ -1,0 +1,35 @@
+# Runs both implementations against the shared conformance cases.
+# Database adapter tests need Docker, so they are left out.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  typescript:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun test packages/odgn-rights/src --path-ignore-patterns 'packages/odgn-rights/src/adapters/**'
+
+  go:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go: ['1.23', 'stable']
+    defaults:
+      run:
+        working-directory: go
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ matrix.go }}
+          cache-dependency-path: go/go.mod
+      - run: test -z "$(gofmt -l .)"
+      - run: go vet ./...
+      - run: go test -race ./...
