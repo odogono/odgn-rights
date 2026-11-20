@@ -174,7 +174,8 @@ func TestConcurrentChecks(t *testing.T) {
 			defer wg.Done()
 			for i := 0; i < 200; i++ {
 				path := fmt.Sprintf("/posts/%d", i%50)
-				if !s.Write(path) || !unsealed.Read(path) || unsealed.Read("/secret/"+path) {
+				if !s.Write(path) || !unsealed.Read(path) || unsealed.Read("/secret/"+path) ||
+					!s.Explain(path, Write).Allowed || unsealed.Explain("/secret/"+path, Read).Allowed {
 					t.Error("wrong answer under concurrency")
 					return
 				}

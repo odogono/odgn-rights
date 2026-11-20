@@ -126,11 +126,20 @@ func (r *Role) ClearParents() error {
 // AllRights returns the role's own rights followed by those of each parent in
 // order, recursively. A Right reached through two parents appears twice.
 func (r *Role) AllRights() []*Right {
-	out := r.rights.List()
-	for _, p := range r.Parents() {
-		out = append(out, p.AllRights()...)
-	}
+	var out []*Right
+	r.eachRight(func(right *Right, _ *Role) { out = append(out, right) })
 	return out
+}
+
+// eachRight calls visit with each Right AllRights returns, in order, and the
+// role that holds it.
+func (r *Role) eachRight(visit func(right *Right, owner *Role)) {
+	for _, right := range r.rights.List() {
+		visit(right, r)
+	}
+	for _, p := range r.Parents() {
+		p.eachRight(visit)
+	}
 }
 
 // FindRightsByTag returns the role's rights, including inherited ones, with

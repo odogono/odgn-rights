@@ -121,7 +121,12 @@
                   "flags": { "$ref": "#/$defs/flags" },
                   "now": { "$ref": "#/$defs/time" },
                   "context": { "type": "object" },
-                  "expect": { "type": "boolean" }
+                  "expect": { "type": "boolean" },
+                  "explain": {
+                    "description": "The check's explanation: one entry per flag asked, in flag-bit order (r w d c x).",
+                    "type": "array",
+                    "items": { "$ref": "#/$defs/flagExplanation" }
+                  }
                 }
               },
               {
@@ -159,6 +164,39 @@
         "removeParent": {
           "description": "Name of a role in `roles` the role stops inheriting from. Needs `role`.",
           "type": "string"
+        }
+      }
+    },
+    "flagExplanation": {
+      "type": "object",
+      "required": ["flag", "allowed", "right"],
+      "additionalProperties": false,
+      "properties": {
+        "flag": { "enum": ["r", "w", "c", "d", "x"] },
+        "allowed": { "type": "boolean" },
+        "right": {
+          "description": "The deciding Right's text form, or null when no Right decides the flag.",
+          "type": ["string", "null"]
+        },
+        "source": {
+          "description": "Where a Subject's deciding Right came from. Required in subject cases when `right` is not null; never given otherwise.",
+          "oneOf": [
+            {
+              "type": "object",
+              "required": ["type"],
+              "additionalProperties": false,
+              "properties": { "type": { "const": "direct" } }
+            },
+            {
+              "type": "object",
+              "required": ["type", "name"],
+              "additionalProperties": false,
+              "properties": {
+                "type": { "const": "role" },
+                "name": { "type": "string" }
+              }
+            }
+          ]
         }
       }
     },

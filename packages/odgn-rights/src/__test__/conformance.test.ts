@@ -4,6 +4,7 @@ import { describe, expect, it } from 'bun:test';
 
 import {
   ALL_BITS,
+  Flags,
   Right,
   Rights,
   RoleRegistry,
@@ -21,9 +22,19 @@ import { flagsFromLetters } from './flags-from-letters';
 
 const CONFORMANCE_DIR = join(import.meta.dir, '../../../../conformance');
 
+type Source = { name?: string; type: 'direct' | 'role' };
+
+type FlagExplanation = {
+  allowed: boolean;
+  flag: string;
+  right: string | null;
+  source?: Source;
+};
+
 type Check = {
   context?: Record<string, unknown>;
   expect: boolean;
+  explain?: FlagExplanation[];
   flags: string;
   now?: string;
   path: string;
@@ -111,7 +122,26 @@ const withCondition = (right: Right, condition: Condition): Right => {
   return copy;
 };
 
-type Checker = { has: Rights['has'] };
+type Checker = {
+  explain: (...args: Parameters<Rights['explain']>) => {
+    allowed: boolean;
+    details: Array<{
+      allowed: boolean;
+      bit: Flags;
+      right?: Right;
+      source?: Source;
+    }>;
+  };
+  has: Rights['has'];
+};
+
+const LETTER_OF: Record<number, string> = {
+  [Flags.CREATE]: 'c',
+  [Flags.DELETE]: 'd',
+  [Flags.EXECUTE]: 'x',
+  [Flags.READ]: 'r',
+  [Flags.WRITE]: 'w'
+};
 
 type Built = { checker: Checker; registry?: RoleRegistry; subject?: Subject };
 
@@ -192,6 +222,23 @@ const runCase = (c: Case) => {
           context
         );
         expect({ ...check, got }).toEqual({ ...check, got: check.expect });
+        if (check.explain) {
+          const res = checker.explain(
+            check.path,
+            flagsFromLetters(check.flags),
+            context
+          );
+          const explain = res.details.map(d => ({
+            allowed: d.allowed,
+            flag: LETTER_OF[d.bit],
+            right: d.right ? d.right.toString() : null,
+            ...(c.subject && d.right ? { source: d.source } : {})
+          }));
+          expect({ ...check, allowed: res.allowed, explain }).toEqual({
+            ...check,
+            allowed: check.expect
+          } as never);
+        }
       }
       return;
     }

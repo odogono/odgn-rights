@@ -11,7 +11,8 @@
 // answers checks: for each flag asked about, the matching Rights are ranked by
 // priority, then specificity, then the order they were added, and the first
 // one that is in its validity window, whose condition holds and that mentions
-// the flag decides it. A flag nothing decides is denied.
+// the flag decides it. A flag nothing decides is denied. Explain gives the
+// same answer broken down per flag, naming each flag's deciding Right.
 //
 //	rs := rights.NewRights()
 //	_ = rs.Allow("/", rights.Read)

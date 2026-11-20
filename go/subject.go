@@ -51,7 +51,27 @@ func (s *Subject) AllRights() []*Right {
 
 // Has reports whether every one of the flags is allowed on the path.
 func (s *Subject) Has(path string, f Flags, opts ...CheckOption) bool {
-	return decide(orderMatches(s.AllRights(), NormalizePath(path)), f, newCheckConfig(opts))
+	return decide(orderMatches(s.AllRights(), NormalizePath(path)), f, newCheckConfig(opts), untilDenied)
+}
+
+// Explain answers a check like Has, naming the deciding Right for each flag
+// and the role it came from, or a nil Role for a direct right.
+func (s *Subject) Explain(path string, f Flags, opts ...CheckOption) Explanation {
+	var all []*Right
+	roleOf := make(map[*Right]*Role)
+	for _, role := range s.Roles() {
+		role.eachRight(func(right *Right, owner *Role) {
+			all = append(all, right)
+			roleOf[right] = owner
+		})
+	}
+	for _, right := range s.rights.List() {
+		all = append(all, right)
+		roleOf[right] = nil
+	}
+	// A Right reached more than once takes its last source, as in TypeScript.
+	return explain(orderMatches(all, NormalizePath(path)), f, newCheckConfig(opts),
+		func(r *Right) *Role { return roleOf[r] })
 }
 
 // CheckMany answers each request, in order, with the same time and context.
@@ -60,7 +80,7 @@ func (s *Subject) CheckMany(reqs []Request, opts ...CheckOption) []bool {
 	all := s.AllRights()
 	out := make([]bool, len(reqs))
 	for i, req := range reqs {
-		out[i] = decide(orderMatches(all, NormalizePath(req.Path)), req.Flags, cfg)
+		out[i] = decide(orderMatches(all, NormalizePath(req.Path)), req.Flags, cfg, untilDenied)
 	}
 	return out
 }
