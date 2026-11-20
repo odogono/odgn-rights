@@ -218,72 +218,63 @@ func (a *Adapter) LoadRegistry(ctx context.Context) (*rights.RoleRegistry, error
 // It returns nil and no error when no Subject is saved under identifier.
 // Pass a registry from LoadRegistry or LoadRegistrySnapshot, sealed if it is
 // shared between goroutines.
+//
+// The subject's roles and direct rights come from one statement, so they are
+// from one committed state even while the subject is being saved. (The
+// TypeScript adapter reads them in two.) The registry is a separate read;
+// reload it when its Revision changes.
 func (a *Adapter) LoadSubject(ctx context.Context, identifier string, registry *rights.RoleRegistry) (*rights.Subject, error) {
 	t := a.tables
+	// One row per role (kind 0) and per direct right (kind 1). A subject with
+	// neither still gives one kind 0 row with no role, which shows it exists.
 	rows, err := a.db.QueryContext(ctx, `
-		SELECT subject.id, role.name
-		FROM `+t.Subjects+` subject
+		WITH subject AS (SELECT id FROM `+t.Subjects+` WHERE identifier = $1)
+		SELECT 0 AS kind, role.id AS ord, role.name,
+			NULL::integer, NULL::text, NULL::integer, NULL::integer, NULL::integer,
+			NULL::text, NULL::text, NULL::timestamptz, NULL::timestamptz
+		FROM subject
 		LEFT JOIN `+t.SubjectRoles+` subject_role ON subject_role.subject_id = subject.id
 		LEFT JOIN `+t.Roles+` role ON role.id = subject_role.role_id
-		WHERE subject.identifier = $1
-		ORDER BY role.id`, identifier)
+		UNION ALL
+		SELECT 1, r.id, NULL, `+rightColumns+`
+		FROM subject
+		JOIN `+t.SubjectRights+` subject_right ON subject_right.subject_id = subject.id
+		JOIN `+t.Rights+` r ON r.id = subject_right.right_id
+		ORDER BY kind, ord`, identifier)
 	if err != nil {
 		return nil, fmt.Errorf("postgres: load subject: %w", err)
 	}
 	defer rows.Close()
 
-	var subjectID int64
-	found := false
-	var roleNames []string
+	var subject *rights.Subject
 	for rows.Next() {
+		var kind int
+		var ord sql.NullInt64
 		var roleName sql.NullString
-		if err := rows.Scan(&subjectID, &roleName); err != nil {
+		var row nullableRightRow
+		if err := rows.Scan(append([]any{&kind, &ord, &roleName}, row.scanTargets()...)...); err != nil {
 			return nil, fmt.Errorf("postgres: read subject: %w", err)
 		}
-		found = true
-		if roleName.Valid {
-			roleNames = append(roleNames, roleName.String)
+		if subject == nil {
+			subject = rights.NewSubject()
+		}
+		switch {
+		case kind == 0 && roleName.Valid:
+			if role := registry.Get(roleName.String); role != nil {
+				subject.MemberOf(role)
+			}
+		case kind == 1:
+			right, err := row.right()
+			if err != nil {
+				return nil, fmt.Errorf("postgres: subject %q: %w", identifier, err)
+			}
+			if err := subject.Rights().Add(right); err != nil {
+				return nil, fmt.Errorf("postgres: subject %q: %w", identifier, err)
+			}
 		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("postgres: load subject: %w", err)
-	}
-	if !found {
-		return nil, nil
-	}
-
-	subject := rights.NewSubject()
-	for _, name := range roleNames {
-		if role := registry.Get(name); role != nil {
-			subject.MemberOf(role)
-		}
-	}
-
-	direct, err := a.db.QueryContext(ctx, `
-		SELECT `+rightColumns+`
-		FROM `+t.SubjectRights+` subject_right
-		JOIN `+t.Rights+` r ON r.id = subject_right.right_id
-		WHERE subject_right.subject_id = $1
-		ORDER BY r.id`, subjectID)
-	if err != nil {
-		return nil, fmt.Errorf("postgres: load subject rights: %w", err)
-	}
-	defer direct.Close()
-	for direct.Next() {
-		var row nullableRightRow
-		if err := direct.Scan(row.scanTargets()...); err != nil {
-			return nil, fmt.Errorf("postgres: read subject right: %w", err)
-		}
-		right, err := row.right()
-		if err != nil {
-			return nil, fmt.Errorf("postgres: subject %q: %w", identifier, err)
-		}
-		if err := subject.Rights().Add(right); err != nil {
-			return nil, fmt.Errorf("postgres: subject %q: %w", identifier, err)
-		}
-	}
-	if err := direct.Err(); err != nil {
-		return nil, fmt.Errorf("postgres: load subject rights: %w", err)
 	}
 	return subject, nil
 }
