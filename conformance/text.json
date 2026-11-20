@@ -422,15 +422,69 @@
     },
     {
       "kind": "parseRights",
-      "name": "a comma inside tags splits the right (known limitation)",
+      "name": "a comma inside tags stays in the right",
       "input": "+r:/a#x,y",
-      "expect": { "texts": ["+r:/a#x", ":/y"], "text": "+r:/a#x, :/y" }
+      "expect": { "texts": ["+r:/a#x,y"], "text": "+r:/a#x,y" }
     },
     {
       "kind": "parseRights",
-      "name": "a question mark splits the right (known limitation)",
+      "name": "a question mark stays in the path pattern",
       "input": "+r:/file?.txt",
-      "expect": { "texts": ["+r:/file", ":/.txt"], "text": "+r:/file, :/.txt" }
+      "expect": { "texts": ["+r:/file?.txt"], "text": "+r:/file?.txt" }
+    },
+    {
+      "kind": "parseRights",
+      "name": "several question marks in one path pattern",
+      "input": "+r:/logs/??/day-?.txt, -w:/a?b",
+      "expect": {
+        "texts": ["+r:/logs/??/day-?.txt", "-w:/a?b"],
+        "text": "+r:/logs/??/day-?.txt, -w:/a?b"
+      }
+    },
+    {
+      "kind": "parseRights",
+      "name": "a comma in tags followed by another right",
+      "input": "+r:/a#x,y, -w:/b#z",
+      "expect": {
+        "texts": ["+r:/a#x,y", "-w:/b#z"],
+        "text": "+r:/a#x,y, -w:/b#z"
+      }
+    },
+    {
+      "kind": "parseRights",
+      "name": "a comma splits before a right with no flags",
+      "input": "+r:/a#x,y,:/b",
+      "expect": { "texts": ["+r:/a#x,y", ":/b"], "text": "+r:/a#x,y, :/b" }
+    },
+    {
+      "kind": "parseRights",
+      "name": "a comma inside a path pattern stays in the right",
+      "input": "+r:/a,b",
+      "expect": { "texts": ["+r:/a,b"], "text": "+r:/a,b" }
+    },
+    {
+      "kind": "parseRights",
+      "name": "question marks and tag commas on separate lines",
+      "input": "+r:/file?.txt#x,y\r\n-w:/b?\n+c:/c#z",
+      "expect": {
+        "texts": ["+r:/file?.txt#x,y", "-w:/b?", "+c:/c#z"],
+        "text": "+r:/file?.txt#x,y, -w:/b?, +c:/c#z"
+      }
+    },
+    {
+      "kind": "parseRights",
+      "name": "a comma before a line break or the end is dropped",
+      "input": "+r:/a#x,y, \n-w:/b?,  ",
+      "expect": {
+        "texts": ["+r:/a#x,y", "-w:/b?"],
+        "text": "+r:/a#x,y, -w:/b?"
+      }
+    },
+    {
+      "kind": "parseRights",
+      "name": "a question mark no longer separates rights",
+      "input": "+r:/a?+w:/b",
+      "expect": { "texts": ["+r:/a?+w:/b"], "text": "+r:/a?+w:/b" }
     }
   ]
 }
