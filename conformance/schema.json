@@ -108,19 +108,57 @@
           }
         },
         "checks": {
+          "description": "Steps run in order: each is a check, or a change to the subject's roles or direct rights made between checks.",
           "type": "array",
           "items": {
-            "type": "object",
-            "required": ["path", "flags", "expect"],
-            "additionalProperties": false,
-            "properties": {
-              "path": { "type": "string" },
-              "flags": { "$ref": "#/$defs/flags" },
-              "now": { "$ref": "#/$defs/time" },
-              "context": { "type": "object" },
-              "expect": { "type": "boolean" }
-            }
+            "oneOf": [
+              {
+                "type": "object",
+                "required": ["path", "flags", "expect"],
+                "additionalProperties": false,
+                "properties": {
+                  "path": { "type": "string" },
+                  "flags": { "$ref": "#/$defs/flags" },
+                  "now": { "$ref": "#/$defs/time" },
+                  "context": { "type": "object" },
+                  "expect": { "type": "boolean" }
+                }
+              },
+              {
+                "type": "object",
+                "required": ["change"],
+                "additionalProperties": false,
+                "properties": { "change": { "$ref": "#/$defs/change" } }
+              }
+            ]
           }
+        }
+      }
+    },
+    "change": {
+      "description": "Change one role in `roles` (named by `role`), or the subject's direct rights when `role` is absent, of a case that has a `subject`. Applied in this order: removeRights, addRights, removeParent, inheritFrom.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "role": { "type": "string" },
+        "addRights": {
+          "description": "Rights added at the end, in order.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/rightJSON" }
+        },
+        "removeRights": {
+          "description": "Paths whose Rights are removed.",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "inheritFrom": {
+          "description": "Name of a role in `roles` for the role to inherit from. Needs `role`.",
+          "type": "string"
+        },
+        "removeParent": {
+          "description": "Name of a role in `roles` the role stops inheriting from. Needs `role`.",
+          "type": "string"
         }
       }
     },

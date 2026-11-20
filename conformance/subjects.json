@@ -199,6 +199,221 @@
           "expect": false
         }
       ]
+    },
+    {
+      "kind": "check",
+      "name": "a right added to a role reaches its subject between checks",
+      "roles": [
+        {
+          "name": "editor",
+          "rights": []
+        }
+      ],
+      "subject": {
+        "roles": ["editor"]
+      },
+      "checks": [
+        {
+          "path": "/doc",
+          "flags": "r",
+          "expect": false
+        },
+        {
+          "change": {
+            "role": "editor",
+            "addRights": [
+              {
+                "path": "/doc",
+                "allow": "r"
+              }
+            ]
+          }
+        },
+        {
+          "path": "/doc",
+          "flags": "r",
+          "expect": true
+        }
+      ]
+    },
+    {
+      "kind": "check",
+      "name": "a right removed from a role leaves its subject between checks",
+      "roles": [
+        {
+          "name": "editor",
+          "rights": [
+            {
+              "path": "/doc",
+              "allow": "rw"
+            }
+          ]
+        }
+      ],
+      "subject": {
+        "roles": ["editor"]
+      },
+      "checks": [
+        {
+          "path": "/doc",
+          "flags": "rw",
+          "expect": true
+        },
+        {
+          "change": {
+            "role": "editor",
+            "removeRights": ["/doc"]
+          }
+        },
+        {
+          "path": "/doc",
+          "flags": "r",
+          "expect": false
+        }
+      ]
+    },
+    {
+      "kind": "check",
+      "name": "a change to inheritance reaches the subject between checks",
+      "roles": [
+        {
+          "name": "base",
+          "rights": []
+        },
+        {
+          "name": "viewer",
+          "rights": [],
+          "inherits": ["base"]
+        },
+        {
+          "name": "editor",
+          "rights": [
+            {
+              "path": "/doc",
+              "allow": "w"
+            }
+          ],
+          "inherits": ["viewer"]
+        },
+        {
+          "name": "auditor",
+          "rights": [
+            {
+              "path": "/logs",
+              "allow": "r"
+            }
+          ]
+        }
+      ],
+      "subject": {
+        "roles": ["editor"]
+      },
+      "checks": [
+        {
+          "path": "/doc",
+          "flags": "r",
+          "expect": false
+        },
+        {
+          "change": {
+            "role": "base",
+            "addRights": [
+              {
+                "path": "/doc",
+                "allow": "r"
+              }
+            ]
+          }
+        },
+        {
+          "path": "/doc",
+          "flags": "rw",
+          "expect": true
+        },
+        {
+          "change": {
+            "role": "viewer",
+            "inheritFrom": "auditor"
+          }
+        },
+        {
+          "path": "/logs",
+          "flags": "r",
+          "expect": true
+        },
+        {
+          "change": {
+            "role": "editor",
+            "removeParent": "viewer"
+          }
+        },
+        {
+          "path": "/doc",
+          "flags": "r",
+          "expect": false
+        },
+        {
+          "path": "/logs",
+          "flags": "r",
+          "expect": false
+        },
+        {
+          "path": "/doc",
+          "flags": "w",
+          "expect": true
+        }
+      ]
+    },
+    {
+      "kind": "check",
+      "name": "a change to direct rights reaches the subject between checks",
+      "roles": [
+        {
+          "name": "viewer",
+          "rights": [
+            {
+              "path": "/",
+              "allow": "r"
+            }
+          ]
+        }
+      ],
+      "subject": {
+        "roles": ["viewer"]
+      },
+      "checks": [
+        {
+          "path": "/secret",
+          "flags": "r",
+          "expect": true
+        },
+        {
+          "change": {
+            "addRights": [
+              {
+                "path": "/secret",
+                "allow": "",
+                "deny": "r"
+              }
+            ]
+          }
+        },
+        {
+          "path": "/secret",
+          "flags": "r",
+          "expect": false
+        },
+        {
+          "change": {
+            "removeRights": ["/secret"]
+          }
+        },
+        {
+          "path": "/secret",
+          "flags": "r",
+          "expect": true
+        }
+      ]
     }
   ]
 }
