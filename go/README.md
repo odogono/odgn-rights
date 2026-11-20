@@ -44,6 +44,19 @@ user.Write("/posts/9", rights.WithContext(rights.Context{"userId": "a", "ownerId
 user.Read("/posts/9", rights.At(time.Now().Add(24*time.Hour)))                              // check at another time
 ```
 
+To see why a check came out as it did, `Explain` takes the same arguments as `Has` and names the deciding Right for each flag, or nil when nothing decides it, so the flag is denied. On a subject it also gives the role the Right came from, or nil for a direct right:
+
+```go
+e := user.Explain("/posts/1", rights.Read|rights.Write)
+e.Allowed // true
+for _, f := range e.Flags {
+	fmt.Println(f.Flag, f.Allowed, f.Right) // e.g. r true +r:/
+	if f.Role != nil {
+		fmt.Println("from role", f.Role.Name()) // e.g. viewer
+	}
+}
+```
+
 ## Same answers as the TypeScript library
 
 Both implementations run the shared cases in [`../conformance`](../conformance), which define the decision order and the text and JSON forms. A change to either belongs in one pull request with new cases. See [`GLOSSARY.md`](../GLOSSARY.md) for the terms and [ADR 0001](../docs/adr/0001-go-port-shares-conformance-cases.md) for why.
@@ -55,7 +68,7 @@ Where Go differs from TypeScript:
 - Dates are read only in ISO 8601 form (a date, optionally with a time and offset). TypeScript also accepts the engine's other formats, such as `Jan 1 2025`; Go ignores them, as both ignore unreadable dates.
 - A `?` in a path pattern matches one character. In TypeScript it matches one UTF-16 code unit, so there a character outside the Basic Multilingual Plane, such as an emoji, needs `??`.
 - Priorities are integers. TypeScript's JSON loader also accepts fractional priorities; Go rejects JSON that has them.
-- Explanations and the CLI are not ported yet, and only the Postgres adapter is, for reading (see below).
+- The CLI is not ported yet, and only the Postgres adapter is, for reading (see below).
 
 ## Loading from Postgres
 

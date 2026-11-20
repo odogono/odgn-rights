@@ -1,0 +1,177 @@
+{
+  "$schema": "./schema.json",
+  "description": "Explanations: each check's `explain` names, per flag asked, whether it is allowed and its deciding Right, plus where a Subject's deciding Right came from.",
+  "cases": [
+    {
+      "kind": "check",
+      "name": "priority outweighs specificity",
+      "rights": ["-r:/a/b", "+r:/a^5"],
+      "checks": [
+        {
+          "path": "/a/b",
+          "flags": "r",
+          "expect": true,
+          "explain": [{ "flag": "r", "allowed": true, "right": "+r:/a^5" }]
+        }
+      ]
+    },
+    {
+      "kind": "check",
+      "name": "the more specific right decides at equal priority",
+      "rights": ["+rw:/", "-w:/locked"],
+      "checks": [
+        {
+          "path": "/locked/x",
+          "flags": "rw",
+          "expect": false,
+          "explain": [
+            { "flag": "r", "allowed": true, "right": "+rw:/" },
+            { "flag": "w", "allowed": false, "right": "-w:/locked" }
+          ]
+        },
+        {
+          "path": "/open",
+          "flags": "w",
+          "expect": true,
+          "explain": [{ "flag": "w", "allowed": true, "right": "+rw:/" }]
+        }
+      ]
+    },
+    {
+      "kind": "check",
+      "name": "a flag no right mentions is denied with no deciding right",
+      "rights": ["+r:/a"],
+      "checks": [
+        {
+          "path": "/a",
+          "flags": "rw",
+          "expect": false,
+          "explain": [
+            { "flag": "r", "allowed": true, "right": "+r:/a" },
+            { "flag": "w", "allowed": false, "right": null }
+          ]
+        },
+        {
+          "path": "/b",
+          "flags": "r",
+          "expect": false,
+          "explain": [{ "flag": "r", "allowed": false, "right": null }]
+        },
+        { "path": "/a", "flags": "", "expect": true, "explain": [] }
+      ]
+    },
+    {
+      "kind": "check",
+      "name": "a negated path decides with its swapped flags",
+      "rights": ["+rw:/", "+w:!/secret"],
+      "checks": [
+        {
+          "path": "/secret/plans",
+          "flags": "rw",
+          "expect": false,
+          "explain": [
+            { "flag": "r", "allowed": true, "right": "+rw:/" },
+            { "flag": "w", "allowed": false, "right": "-w:/secret" }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "check",
+      "name": "every flag is explained in flag-bit order",
+      "rights": ["+rw:/", "-d:/a", "+x:/a/b"],
+      "checks": [
+        {
+          "path": "/a/b",
+          "flags": "*",
+          "expect": false,
+          "explain": [
+            { "flag": "r", "allowed": true, "right": "+rw:/" },
+            { "flag": "w", "allowed": true, "right": "+rw:/" },
+            { "flag": "d", "allowed": false, "right": "-d:/a" },
+            { "flag": "c", "allowed": false, "right": null },
+            { "flag": "x", "allowed": true, "right": "+x:/a/b" }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "check",
+      "name": "a right whose condition fails or that is out of its window does not decide",
+      "rights": [
+        "+r:/",
+        "-r:/a",
+        "-r:/a/b@2000-01-01T00:00:00.000Z/2000-12-31T00:00:00.000Z"
+      ],
+      "conditions": { "1": "internal" },
+      "checks": [
+        {
+          "path": "/a/b",
+          "flags": "r",
+          "now": "2025-01-01T00:00:00Z",
+          "expect": true,
+          "explain": [{ "flag": "r", "allowed": true, "right": "+r:/" }]
+        },
+        {
+          "path": "/a/b",
+          "flags": "r",
+          "now": "2025-01-01T00:00:00Z",
+          "context": { "isInternal": true },
+          "expect": false,
+          "explain": [{ "flag": "r", "allowed": false, "right": "-r:/a" }]
+        }
+      ]
+    },
+    {
+      "kind": "check",
+      "name": "a subject's deciding right names its source",
+      "roles": [
+        { "name": "viewer", "rights": [{ "path": "/", "allow": "r" }] },
+        {
+          "name": "editor",
+          "rights": [{ "path": "/posts", "allow": "w" }],
+          "inherits": ["viewer"]
+        }
+      ],
+      "subject": {
+        "roles": ["editor"],
+        "rights": [{ "path": "/posts/drafts", "allow": "", "deny": "w" }]
+      },
+      "checks": [
+        {
+          "path": "/posts/1",
+          "flags": "rw",
+          "expect": true,
+          "explain": [
+            {
+              "flag": "r",
+              "allowed": true,
+              "right": "+r:/",
+              "source": { "type": "role", "name": "viewer" }
+            },
+            {
+              "flag": "w",
+              "allowed": true,
+              "right": "+w:/posts",
+              "source": { "type": "role", "name": "editor" }
+            }
+          ]
+        },
+        {
+          "path": "/posts/drafts/2",
+          "flags": "wc",
+          "expect": false,
+          "explain": [
+            {
+              "flag": "w",
+              "allowed": false,
+              "right": "-w:/posts/drafts",
+              "source": { "type": "direct" }
+            },
+            { "flag": "c", "allowed": false, "right": null }
+          ]
+        }
+      ]
+    }
+  ]
+}

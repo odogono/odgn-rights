@@ -17,12 +17,13 @@ const conformanceDir = "../conformance"
 // conformanceCheck is one step of a check case: a check, or a change made
 // between checks when Change is set.
 type conformanceCheck struct {
-	Change  *conformanceChange `json:"change"`
-	Path    string             `json:"path"`
-	Flags   string             `json:"flags"`
-	Now     string             `json:"now"`
-	Context map[string]any     `json:"context"`
-	Expect  bool               `json:"expect"`
+	Change  *conformanceChange           `json:"change"`
+	Path    string                       `json:"path"`
+	Flags   string                       `json:"flags"`
+	Now     string                       `json:"now"`
+	Context map[string]any               `json:"context"`
+	Expect  bool                         `json:"expect"`
+	Explain []conformanceFlagExplanation `json:"explain"`
 }
 
 // conformanceChange changes a role of the case's registry, or the subject's
@@ -34,6 +35,18 @@ type conformanceChange struct {
 	RemoveRights []string    `json:"removeRights"`
 	InheritFrom  *string     `json:"inheritFrom"`
 	RemoveParent *string     `json:"removeParent"`
+}
+
+type conformanceSource struct {
+	Type string `json:"type"`
+	Name string `json:"name,omitempty"`
+}
+
+type conformanceFlagExplanation struct {
+	Flag    string             `json:"flag"`
+	Allowed bool               `json:"allowed"`
+	Right   *string            `json:"right"`
+	Source  *conformanceSource `json:"source,omitempty"`
 }
 
 type conformanceCase struct {
@@ -79,6 +92,7 @@ func sameScalar(a, b any) bool {
 
 type checker interface {
 	Has(path string, f Flags, opts ...CheckOption) bool
+	Explain(path string, f Flags, opts ...CheckOption) Explanation
 }
 
 func TestConformance(t *testing.T) {
@@ -135,6 +149,10 @@ func runConformanceCase(t *testing.T, c conformanceCase) {
 			if got := ch.Has(check.Path, ParseFlags(check.Flags), opts...); got != check.Expect {
 				t.Errorf("Has(%q, %q, now=%q, ctx=%v) = %v, want %v",
 					check.Path, check.Flags, check.Now, check.Context, got, check.Expect)
+			}
+			if check.Explain != nil {
+				assertExplanation(t, ch.Explain(check.Path, ParseFlags(check.Flags), opts...),
+					check, c.Subject != nil)
 			}
 		}
 
@@ -357,5 +375,37 @@ func assertSameJSON(t *testing.T, v any, expect json.RawMessage, field string) {
 	mustUnmarshal(t, data, &got)
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("JSON = %s, want %s", data, fields[field])
+	}
+}
+
+// assertExplanation compares an Explanation with a check's expected one, in
+// the conformance form: flag letters, Rights by text form and, for a subject,
+// where each deciding Right came from.
+func assertExplanation(t *testing.T, e Explanation, check conformanceCheck, subject bool) {
+	t.Helper()
+	if e.Allowed != check.Expect {
+		t.Errorf("Explain(%q, %q).Allowed = %v, want %v", check.Path, check.Flags, e.Allowed, check.Expect)
+	}
+	got := []conformanceFlagExplanation{}
+	for _, fe := range e.Flags {
+		g := conformanceFlagExplanation{Flag: fe.Flag.String(), Allowed: fe.Allowed}
+		if fe.Right != nil {
+			text := fe.Right.String()
+			g.Right = &text
+			if subject {
+				g.Source = &conformanceSource{Type: "direct"}
+				if fe.Role != nil {
+					g.Source = &conformanceSource{Type: "role", Name: fe.Role.Name()}
+				}
+			}
+		} else if fe.Role != nil {
+			t.Errorf("Explain(%q, %q): flag %s has a Role but no Right", check.Path, check.Flags, fe.Flag)
+		}
+		got = append(got, g)
+	}
+	gotJSON, _ := json.Marshal(got)
+	wantJSON, _ := json.Marshal(check.Explain)
+	if string(gotJSON) != string(wantJSON) {
+		t.Errorf("Explain(%q, %q) = %s, want %s", check.Path, check.Flags, gotJSON, wantJSON)
 	}
 }

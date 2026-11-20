@@ -256,17 +256,33 @@ func orderMatches(list []*Right, p string) []*Right {
 	return out
 }
 
-// decide reports whether every flag in f is allowed by the ordered rights.
-func decide(ordered []*Right, f Flags, cfg checkConfig) bool {
+// decide finds the deciding Right for each flag in f, in flag-bit order, and
+// passes it to visit with the flag's answer; r is nil when nothing decides the
+// flag. It stops early when visit returns false, and reports whether every
+// flag it reached is allowed. Has and Explain both answer through it, so they
+// cannot disagree.
+func decide(ordered []*Right, f Flags, cfg checkConfig, visit func(bit Flags, r *Right, allowed bool) bool) bool {
+	all := true
 	for _, bit := range bits {
-		if f&bit != 0 && !decideBit(ordered, bit, cfg) {
-			return false
+		if f&bit == 0 {
+			continue
+		}
+		r := decidingRight(ordered, bit, cfg)
+		allowed := r != nil && r.deny&bit == 0
+		all = all && allowed
+		if !visit(bit, r, allowed) {
+			break
 		}
 	}
-	return true
+	return all
 }
 
-func decideBit(ordered []*Right, bit Flags, cfg checkConfig) bool {
+// untilDenied stops a decision at the first denied flag, which settles it.
+func untilDenied(_ Flags, _ *Right, allowed bool) bool { return allowed }
+
+// decidingRight returns the first Right in ordered that is valid, whose
+// condition holds and that mentions bit, or nil.
+func decidingRight(ordered []*Right, bit Flags, cfg checkConfig) *Right {
 	for _, r := range ordered {
 		if !r.IsValidAt(cfg.now) {
 			continue
@@ -274,14 +290,49 @@ func decideBit(ordered []*Right, bit Flags, cfg checkConfig) bool {
 		if r.condition != nil && !r.condition(cfg.ctx) {
 			continue
 		}
-		if r.deny&bit != 0 {
-			return false
-		}
-		if r.allow&bit != 0 {
-			return true
+		if (r.deny|r.allow)&bit != 0 {
+			return r
 		}
 	}
-	return false
+	return nil
+}
+
+// explain breaks a check down per flag. roleOf, when not nil, gives the role
+// each deciding Right came from.
+func explain(ordered []*Right, f Flags, cfg checkConfig, roleOf func(*Right) *Role) Explanation {
+	var e Explanation
+	e.Allowed = decide(ordered, f, cfg, func(bit Flags, r *Right, allowed bool) bool {
+		fe := FlagExplanation{Flag: bit, Allowed: allowed, Right: r}
+		if r != nil && roleOf != nil {
+			fe.Role = roleOf(r)
+		}
+		e.Flags = append(e.Flags, fe)
+		return true
+	})
+	return e
+}
+
+// Explanation is a check's answer broken down per flag.
+type Explanation struct {
+	// Allowed is the check's answer: whether every flag asked about is allowed.
+	Allowed bool
+	// Flags has one entry per flag asked about, in the order r, w, d, c, x.
+	Flags []FlagExplanation
+}
+
+// FlagExplanation is the answer for one flag of a check.
+type FlagExplanation struct {
+	// Flag is the single flag explained.
+	Flag Flags
+	// Allowed reports whether the flag is allowed.
+	Allowed bool
+	// Right is the deciding Right, or nil when no Right decides the flag, so it
+	// is denied.
+	Right *Right
+	// Role is the role the deciding Right came from when a Subject's check is
+	// explained. It is nil for a direct right, for a Rights check, and when no
+	// Right decides the flag.
+	Role *Role
 }
 
 // CheckOption sets the time or context of a check.
@@ -321,7 +372,12 @@ type Request struct {
 
 // Has reports whether every one of the flags is allowed on the path.
 func (rs *Rights) Has(path string, f Flags, opts ...CheckOption) bool {
-	return decide(rs.matching(NormalizePath(path)), f, newCheckConfig(opts))
+	return decide(rs.matching(NormalizePath(path)), f, newCheckConfig(opts), untilDenied)
+}
+
+// Explain answers a check like Has, naming the deciding Right for each flag.
+func (rs *Rights) Explain(path string, f Flags, opts ...CheckOption) Explanation {
+	return explain(rs.matching(NormalizePath(path)), f, newCheckConfig(opts), nil)
 }
 
 // CheckMany answers each request, in order, with the same time and context.
@@ -329,7 +385,7 @@ func (rs *Rights) CheckMany(reqs []Request, opts ...CheckOption) []bool {
 	cfg := newCheckConfig(opts)
 	out := make([]bool, len(reqs))
 	for i, req := range reqs {
-		out[i] = decide(rs.matching(NormalizePath(req.Path)), req.Flags, cfg)
+		out[i] = decide(rs.matching(NormalizePath(req.Path)), req.Flags, cfg, untilDenied)
 	}
 	return out
 }
