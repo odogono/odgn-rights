@@ -27,12 +27,14 @@ type conformanceCase struct {
 	Name string                     `json:"name"`
 	Rows map[string]json.RawMessage `json:"rows"`
 
+	// Registry and Subject stay raw, so a field TypeScript emits and Go's
+	// JSON types lack still fails the comparison.
 	Expect struct {
-		Revision int64             `json:"revision"`
-		Registry []rights.RoleJSON `json:"registry"`
+		Revision int64           `json:"revision"`
+		Registry json.RawMessage `json:"registry"`
 		Subjects []struct {
-			Identifier string              `json:"identifier"`
-			Subject    *rights.SubjectJSON `json:"subject"`
+			Identifier string          `json:"identifier"`
+			Subject    json.RawMessage `json:"subject"`
 			Checks     []struct {
 				Path   string `json:"path"`
 				Flags  string `json:"flags"`

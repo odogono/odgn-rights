@@ -2,13 +2,17 @@ import { join } from 'node:path';
 import { SQL } from 'bun';
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 
-import { Flags, type RoleJSON, type SubjectJSON } from '../../index';
+import { flagsFromLetters } from '../../__test__/flags-from-letters';
+import { type RoleJSON, type SubjectJSON } from '../../index';
 import { PostgresAdapter } from '../postgres-adapter';
 import {
   createTableNames,
   generatePostgresDropSchema,
-  generatePostgresSchema
+  generatePostgresSchema,
+  postgresRightConflictTarget,
+  rightIdentityIndexName
 } from '../schema';
+import type { TableNames } from '../types';
 
 // Runs the language-neutral cases in /conformance/postgres, which the Go
 // adapter (go/postgres) runs too, against the TypeScript PostgresAdapter.
@@ -19,13 +23,17 @@ const SCHEMA_FILE = join(DIR, 'schema.sql');
 const PREFIX_PLACEHOLDER = '{{prefix}}';
 const url = process.env.ODGN_RIGHTS_TEST_POSTGRES_URL;
 
+// The tables migrate() creates: the schema, then the right identity index.
+const migratedSchema = (tables: TableNames): string =>
+  `${generatePostgresSchema(tables)}
+CREATE UNIQUE INDEX IF NOT EXISTS ${rightIdentityIndexName(tables)} ON ${tables.rights} ${postgresRightConflictTarget};
+`;
+
 // The Go adapter's tests create their tables from schema.sql, so it must be
 // what this adapter's migrate creates.
 describe('conformance/postgres/schema.sql', () => {
-  it('matches generatePostgresSchema', async () => {
-    const expected = generatePostgresSchema(
-      createTableNames(PREFIX_PLACEHOLDER)
-    );
+  it('matches the schema migrate() runs', async () => {
+    const expected = migratedSchema(createTableNames(PREFIX_PLACEHOLDER));
     if (process.env.UPDATE_CONFORMANCE_SCHEMA) {
       await Bun.write(SCHEMA_FILE, expected);
     }
@@ -69,25 +77,6 @@ const TABLES = [
   'subject_rights'
 ] as const;
 
-const LETTERS: Record<string, Flags> = {
-  c: Flags.CREATE,
-  d: Flags.DELETE,
-  r: Flags.READ,
-  w: Flags.WRITE,
-  x: Flags.EXECUTE
-};
-
-const flagsFromLetters = (letters: string): Flags => {
-  if (letters === '*') {
-    return Flags.ALL;
-  }
-  let mask = 0;
-  for (const ch of letters) {
-    mask |= LETTERS[ch] ?? 0;
-  }
-  return mask as Flags;
-};
-
 const { cases } = (await Bun.file(join(DIR, 'cases.json')).json()) as {
   cases: Case[];
 };
@@ -101,6 +90,52 @@ describe.skipIf(!url)('conformance/postgres/cases.json', () => {
 
   afterAll(async () => {
     await sql?.end();
+  });
+
+  // The text check above compares the SQL; this compares what Postgres
+  // actually builds from migrate() and from schema.sql.
+  it('schema.sql creates the same tables, columns and indexes as migrate()', async () => {
+    const describeTables = async (prefix: string) => {
+      const columns = await sql.unsafe(
+        `SELECT replace(table_name, $1, '') AS t, column_name, data_type, is_nullable,
+                replace(coalesce(column_default, ''), $1, '') AS column_default
+         FROM information_schema.columns
+         WHERE table_schema = current_schema() AND table_name LIKE $1 || '%'
+         ORDER BY 1, 2`,
+        [prefix]
+      );
+      const indexes = await sql.unsafe(
+        `SELECT replace(indexdef, $1, '') AS def FROM pg_indexes
+         WHERE schemaname = current_schema() AND tablename LIKE $1 || '%'
+         ORDER BY 1`,
+        [prefix]
+      );
+      return { columns: [...columns], indexes: [...indexes] };
+    };
+    // Equal-length prefixes, because Postgres cuts the names it makes up for
+    // constraints to 63 characters.
+    const migrated = createTableNames('confmig_');
+    const fromFile = createTableNames('confsql_');
+    await sql.unsafe(generatePostgresDropSchema(migrated));
+    await sql.unsafe(generatePostgresDropSchema(fromFile));
+    const adapter = new PostgresAdapter({ tablePrefix: 'confmig_', url });
+    await adapter.connect();
+    try {
+      await adapter.migrate();
+      await sql.unsafe(
+        (await Bun.file(SCHEMA_FILE).text()).replaceAll(
+          PREFIX_PLACEHOLDER,
+          'confsql_'
+        )
+      );
+      expect(await describeTables('confsql_')).toEqual(
+        await describeTables('confmig_')
+      );
+    } finally {
+      await adapter.disconnect();
+      await sql.unsafe(generatePostgresDropSchema(migrated));
+      await sql.unsafe(generatePostgresDropSchema(fromFile));
+    }
   });
 
   cases.forEach((c, index) => {

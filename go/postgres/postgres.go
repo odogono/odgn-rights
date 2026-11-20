@@ -122,12 +122,19 @@ func LoadRegistrySnapshot(ctx context.Context, db *sql.DB, prefix string) (Snaps
 	if err != nil {
 		return Snapshot{}, err
 	}
+	if afterSnapshotRevision != nil {
+		afterSnapshotRevision()
+	}
 	registry, err := adapter.LoadRegistry(ctx)
 	if err != nil {
 		return Snapshot{}, err
 	}
 	return Snapshot{Registry: registry, Revision: revision}, tx.Commit()
 }
+
+// afterSnapshotRevision runs between a snapshot's revision and role reads.
+// Tests use it to commit a change there.
+var afterSnapshotRevision func()
 
 // rightColumns are a rights row's columns, from the table aliased r, in the
 // order nullableRightRow.scanTargets lists them.

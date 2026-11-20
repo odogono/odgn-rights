@@ -70,3 +70,7 @@ CREATE TABLE IF NOT EXISTS {{prefix}}subject_rights (
 CREATE INDEX IF NOT EXISTS idx_{{prefix}}rights_path ON {{prefix}}rights(path);
 CREATE INDEX IF NOT EXISTS idx_{{prefix}}rights_valid_dates ON {{prefix}}rights(valid_from, valid_until);
 CREATE INDEX IF NOT EXISTS idx_{{prefix}}roles_name ON {{prefix}}roles(name);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_{{prefix}}rights_identity ON {{prefix}}rights (path, allow_mask, deny_mask, priority,
+  (COALESCE(valid_from, '-infinity'::timestamptz)),
+  (COALESCE(valid_until, 'infinity'::timestamptz)));

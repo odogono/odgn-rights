@@ -63,16 +63,32 @@ Where Go differs from TypeScript:
 [`odgn.net/rights/postgres`](postgres) reads the tables the TypeScript `PostgresAdapter` writes, so a Go service can check the same Rights. It only reads: saving stays with TypeScript. It is a separate module, so the core keeps no dependencies, and it uses `database/sql`, so any Postgres driver works.
 
 ```go
-db, _ := sql.Open("pgx", url) // github.com/jackc/pgx/v5/stdlib
+db, err := sql.Open("pgx", url) // github.com/jackc/pgx/v5/stdlib
+if err != nil {
+	return err
+}
 
-snapshot, _ := postgres.LoadRegistrySnapshot(ctx, db, postgres.DefaultTablePrefix)
+snapshot, err := postgres.LoadRegistrySnapshot(ctx, db, postgres.DefaultTablePrefix)
+if err != nil {
+	return err
+}
 snapshot.Registry.Seal() // share it while the Revision is unchanged
 
-adapter, _ := postgres.New(db, postgres.DefaultTablePrefix)
-subject, _ := adapter.LoadSubject(ctx, "user-1", snapshot.Registry) // nil when none is saved
-subject.Read("/posts/1")
+adapter, err := postgres.New(db, postgres.DefaultTablePrefix)
+if err != nil {
+	return err
+}
+subject, err := adapter.LoadSubject(ctx, "user-1", snapshot.Registry)
+if err != nil {
+	return err
+}
+if subject == nil {
+	return errNotFound // no subject is saved under "user-1"
+}
+allowed := subject.Read("/posts/1")
 
-revision, _ := adapter.LoadRegistryRevision(ctx) // reload when it moves past snapshot.Revision
+// Reload the snapshot when the Revision moves past snapshot.Revision.
+revision, err := adapter.LoadRegistryRevision(ctx)
 ```
 
 Both adapters run the shared cases in [`../conformance/postgres`](../conformance/postgres); set `ODGN_RIGHTS_TEST_POSTGRES_URL` to run them locally. See [ADR 0002](../docs/adr/0002-go-postgres-adapter-reads-in-its-own-module.md).

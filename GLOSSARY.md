@@ -88,7 +88,7 @@ A counter identifying one saved state of a role registry, which advances on ever
 ## Implementations
 
 **Adapter**:
-Code that saves role registries, Rights and subjects to a database and loads them back. Every implementation's adapter for one database reads and writes the same tables.
+Code that saves role registries, Rights and subjects to a database, loads them back, or both. Every implementation's adapter for one database uses the same tables; an adapter may only read them.
 _Avoid_: Store, repository, driver
 
 **Conformance case**:
