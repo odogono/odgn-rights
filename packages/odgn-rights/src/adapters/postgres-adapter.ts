@@ -551,8 +551,10 @@ export class PostgresAdapter extends BaseAdapter {
       }
     }
 
+    // Parents in id order: a role's inherited rights follow its parents'
+    // order, which decides ties, so it must not depend on how rows are stored.
     const inheritRows = await this.sql!.unsafe(
-      `SELECT child_role_id, parent_role_id FROM ${roleInheritance}`
+      `SELECT child_role_id, parent_role_id FROM ${roleInheritance} ORDER BY child_role_id, parent_role_id`
     );
 
     for (const ir of inheritRows) {

@@ -300,6 +300,48 @@
           }
         ]
       }
+    },
+    {
+      "name": "a role's parents load in role-id order, which decides tied rights",
+      "rows": {
+        "rights": [
+          { "id": 1, "path": "/x", "allow_mask": 1 },
+          { "id": 2, "path": "/x", "deny_mask": 1 }
+        ],
+        "roles": [
+          { "id": 1, "name": "allows" },
+          { "id": 2, "name": "denies" },
+          { "id": 3, "name": "both" }
+        ],
+        "role_rights": [
+          { "role_id": 1, "right_id": 1 },
+          { "role_id": 2, "right_id": 2 }
+        ],
+        "role_inheritance": [
+          { "child_role_id": 3, "parent_role_id": 2 },
+          { "child_role_id": 3, "parent_role_id": 1 }
+        ],
+        "subjects": [{ "id": 1, "identifier": "s" }],
+        "subject_roles": [{ "subject_id": 1, "role_id": 3 }]
+      },
+      "expect": {
+        "revision": 0,
+        "registry": [
+          { "name": "allows", "rights": [{ "path": "/x", "allow": "r" }] },
+          {
+            "name": "denies",
+            "rights": [{ "path": "/x", "allow": "", "deny": "r" }]
+          },
+          { "name": "both", "rights": [], "inherits": ["allows", "denies"] }
+        ],
+        "subjects": [
+          {
+            "identifier": "s",
+            "subject": { "roles": ["both"] },
+            "checks": [{ "path": "/x", "flags": "r", "expect": true }]
+          }
+        ]
+      }
     }
   ]
 }
