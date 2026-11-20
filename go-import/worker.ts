@@ -20,8 +20,12 @@ const page = `<!doctype html>
 `;
 
 export default {
-  fetch(request: Request): Response {
+  fetch(request: Request): Response | Promise<Response> {
     const url = new URL(request.url);
+    if (url.pathname !== '/rights' && !url.pathname.startsWith('/rights/')) {
+      // Not ours: let the zone's origin handle it.
+      return fetch(request);
+    }
     if (url.searchParams.get('go-get') === '1') {
       return new Response(page, {
         headers: {

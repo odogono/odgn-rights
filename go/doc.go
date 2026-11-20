@@ -4,7 +4,9 @@
 // It is the Go implementation of odgn-rights. The TypeScript and Go
 // implementations reach the same decision for every check, and read and write
 // the same text and JSON forms; the shared conformance cases in the
-// repository's conformance/ directory define that behaviour.
+// repository's conformance/ directory define that behaviour. The README lists
+// the known exceptions, such as a TypeScript subject that keeps using a role's
+// old rights until its cache is invalidated.
 //
 // A [Right] allows and denies [Flags] on a path pattern. A [Rights] collection
 // answers checks: for each flag asked about, the matching Rights are ranked by

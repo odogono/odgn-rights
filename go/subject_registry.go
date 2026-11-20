@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"iter"
 	"slices"
 )
@@ -139,6 +140,9 @@ func SubjectRegistryFromJSON(data []byte, roles *RoleRegistry) (*SubjectRegistry
 	}
 	if _, err := dec.Token(); err != nil {
 		return nil, err
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return nil, fmt.Errorf("rights: unexpected data after the subject registry JSON")
 	}
 	return sr, nil
 }

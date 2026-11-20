@@ -25,7 +25,7 @@ A path pattern written with a leading `!`, which swaps the Right's allowed and d
 _Avoid_: Exclusion path
 
 **Specificity**:
-How narrowly a path pattern targets paths, ranked by its count of wildcard-free segments, then their total length.
+How narrowly a path pattern targets paths, ranked by its count of segments without a `*` (a `?` still counts), then their total length.
 
 **Priority**:
 An explicit rank on a Right that outweighs specificity; higher wins, and the default is zero.

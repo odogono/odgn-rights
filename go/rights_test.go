@@ -260,3 +260,12 @@ func TestTimeComponentsOutOfRange(t *testing.T) {
 		t.Errorf("24:00 should be the next midnight, got %v %v", got, ok)
 	}
 }
+
+func TestSubjectRegistryRejectsTrailingData(t *testing.T) {
+	if _, err := SubjectRegistryFromJSON([]byte(`{"alice":{}} {"bob":{}}`), nil); err == nil {
+		t.Error("want an error for a second JSON value")
+	}
+	if _, err := SubjectRegistryFromJSON([]byte("{\"alice\":{}}\n "), nil); err != nil {
+		t.Errorf("trailing whitespace should be fine: %v", err)
+	}
+}

@@ -41,11 +41,26 @@ var conformanceConditions = map[string]Condition{
 	"always": func(Context) bool { return true },
 	"never":  func(Context) bool { return false },
 	"owner": func(ctx Context) bool {
-		user, ok := ctx["userId"]
-		return ok && user == ctx["ownerId"]
+		user, hasUser := ctx["userId"]
+		owner, hasOwner := ctx["ownerId"]
+		return hasUser && hasOwner && sameScalar(user, owner)
 	},
 	"internal":    func(ctx Context) bool { return ctx["isInternal"] == true },
 	"notInternal": func(ctx Context) bool { return ctx["isInternal"] != true },
+}
+
+// sameScalar compares decoded JSON values as JavaScript's === does for the
+// types a context holds: arrays and objects are never equal to each other.
+func sameScalar(a, b any) bool {
+	switch a.(type) {
+	case []any, map[string]any:
+		return false
+	}
+	switch b.(type) {
+	case []any, map[string]any:
+		return false
+	}
+	return a == b
 }
 
 type checker interface {
