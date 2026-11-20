@@ -519,7 +519,9 @@ export class SQLiteAdapter extends BaseAdapter {
 
     const { roleInheritance } = this.tables;
     const inheritRows = this.db
-      ?.query(`SELECT child_role_id, parent_role_id FROM ${roleInheritance}`)
+      ?.query(
+        `SELECT child_role_id, parent_role_id FROM ${roleInheritance} ORDER BY child_role_id, parent_role_id`
+      )
       .all() as RoleInheritanceRow[];
 
     if (inheritRows) {
@@ -1039,6 +1041,7 @@ export class SQLiteAdapter extends BaseAdapter {
 
     this.stmtSelectRoleInheritance = this.db.prepare(`
       SELECT child_role_id, parent_role_id FROM ${roleInheritance}
+      ORDER BY child_role_id, parent_role_id
     `);
 
     this.stmtInsertSubject = this.db.prepare(`

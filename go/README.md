@@ -56,7 +56,42 @@ Where Go differs from TypeScript:
 - A `?` in a path pattern matches one character. In TypeScript it matches one UTF-16 code unit, so there a character outside the Basic Multilingual Plane, such as an emoji, needs `??`.
 - Priorities are integers. TypeScript's JSON loader also accepts fractional priorities; Go rejects JSON that has them.
 - Checks never see a stale view of a subject's roles; TypeScript caches a subject's rights until `invalidateCache()` is called.
-- Explanations, database adapters and the CLI are not ported yet.
+- Explanations and the CLI are not ported yet, and only the Postgres adapter is, for reading (see below).
+
+## Loading from Postgres
+
+[`odgn.net/rights/postgres`](postgres) reads the tables the TypeScript `PostgresAdapter` writes, so a Go service can check the same Rights. It only reads: saving stays with TypeScript. It is a separate module, so the core keeps no dependencies, and it uses `database/sql`, so any Postgres driver works.
+
+```go
+db, err := sql.Open("pgx", url) // github.com/jackc/pgx/v5/stdlib
+if err != nil {
+	return err
+}
+
+snapshot, err := postgres.LoadRegistrySnapshot(ctx, db, postgres.DefaultTablePrefix)
+if err != nil {
+	return err
+}
+snapshot.Registry.Seal() // share it while the Revision is unchanged
+
+adapter, err := postgres.New(db, postgres.DefaultTablePrefix)
+if err != nil {
+	return err
+}
+subject, err := adapter.LoadSubject(ctx, "user-1", snapshot.Registry)
+if err != nil {
+	return err
+}
+if subject == nil {
+	return errNotFound // no subject is saved under "user-1"
+}
+allowed := subject.Read("/posts/1")
+
+// Reload the snapshot when the Revision moves past snapshot.Revision.
+revision, err := adapter.LoadRegistryRevision(ctx)
+```
+
+Both adapters run the shared cases in [`../conformance/postgres`](../conformance/postgres); set `ODGN_RIGHTS_TEST_POSTGRES_URL` to run them locally. See [ADR 0002](../docs/adr/0002-go-postgres-adapter-reads-in-its-own-module.md).
 
 ## Concurrency
 
@@ -64,4 +99,4 @@ Any number of checks can run at once on any value. Changes need the caller's own
 
 ## Versions
 
-Go releases are tagged `go/vX.Y.Z` and versioned separately from the npm package.
+Go releases are tagged `go/vX.Y.Z` and versioned separately from the npm package. The Postgres adapter is tagged `go/postgres/vX.Y.Z`.

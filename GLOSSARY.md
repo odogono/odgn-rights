@@ -87,6 +87,10 @@ A counter identifying one saved state of a role registry, which advances on ever
 
 ## Implementations
 
+**Adapter**:
+Code that saves role registries, Rights and subjects to a database, loads them back, or both. Every implementation's adapter for one database uses the same tables; an adapter may only read them.
+_Avoid_: Store, repository, driver
+
 **Conformance case**:
 One shared, language-neutral example (Rights, a check and its expected answer, or a text/JSON input and its expected parse) that every implementation must agree on.
 _Avoid_: Fixture, golden test
