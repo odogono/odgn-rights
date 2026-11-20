@@ -7,7 +7,7 @@ replace odgn.net/rights => ../
 
 require (
 	github.com/jackc/pgx/v5 v5.7.5
-	odgn.net/rights v0.0.0
+	odgn.net/rights v0.1.0
 )
 
 require (
