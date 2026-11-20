@@ -4,6 +4,15 @@
   "cases": [
     {
       "kind": "parseRight",
+      "name": "tags sort by UTF-16 code units",
+      "input": "+r:/a#！,😀",
+      "expect": {
+        "text": "+r:/a#😀,！",
+        "json": { "allow": "r", "path": "/a", "tags": ["😀", "！"] }
+      }
+    },
+    {
+      "kind": "parseRight",
       "name": "allow flags",
       "input": "+rw:/",
       "expect": { "text": "+rw:/", "json": { "allow": "rw", "path": "/" } }

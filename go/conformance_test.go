@@ -192,6 +192,9 @@ func runConformanceCase(t *testing.T, c conformanceCase) {
 func buildChecker(t *testing.T, c conformanceCase) checker {
 	t.Helper()
 	if c.Subject != nil {
+		if len(c.Conditions) > 0 {
+			t.Fatal("conditions apply only to rights or rightsJSON, not to a subject")
+		}
 		rr, err := RoleRegistryFromJSON(c.Roles)
 		if err != nil {
 			t.Fatal(err)

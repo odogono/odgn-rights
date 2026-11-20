@@ -38,6 +38,9 @@ func parseTime(s string) (time.Time, bool) {
 		hour > 24 || minute > 59 || second > 59 {
 		return time.Time{}, false
 	}
+	if hour == 24 && (minute != 0 || second != 0 || strings.Trim(m[7], "0") != "") {
+		return time.Time{}, false
+	}
 	ms := 0
 	if frac := m[7]; frac != "" {
 		frac = (frac + "00")[:3]
@@ -53,7 +56,11 @@ func parseTime(s string) (time.Time, bool) {
 			sign = -1
 		}
 		digits := strings.ReplaceAll(offset[1:], ":", "")
-		secs := sign * (num(digits[:2], 0)*3600 + num(digits[2:], 0)*60)
+		offHours, offMinutes := num(digits[:2], 0), num(digits[2:], 0)
+		if offHours > 23 || offMinutes > 59 {
+			return time.Time{}, false
+		}
+		secs := sign * (offHours*3600 + offMinutes*60)
 		loc = time.FixedZone("", secs)
 	case m[4] != "":
 		loc = time.Local

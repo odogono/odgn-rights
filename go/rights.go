@@ -1,6 +1,7 @@
 package rights
 
 import (
+	"cmp"
 	"encoding/json"
 	"regexp"
 	"slices"
@@ -202,10 +203,7 @@ func (rs *Rights) upsert(p string, flags []Flags, apply func(*Right, Flags)) err
 	i := slices.IndexFunc(rs.list, func(r *Right) bool { return r.path == p })
 	var r *Right
 	if i == -1 {
-		r = &Right{path: p, tags: map[string]struct{}{}, specificity: specificity(p)}
-		if strings.ContainsAny(p, "*?") {
-			r.re = globToRegexp(p)
-		}
+		r = newRightAt(p)
 		rs.list = append(rs.list, r)
 		rs.changed()
 	} else {
@@ -251,10 +249,10 @@ func orderMatches(list []*Right, p string) []*Right {
 		}
 	}
 	slices.SortStableFunc(out, func(a, b *Right) int {
-		if a.priority != b.priority {
-			return b.priority - a.priority
+		if c := cmp.Compare(b.priority, a.priority); c != 0 {
+			return c
 		}
-		return b.specificity - a.specificity
+		return cmp.Compare(b.specificity, a.specificity)
 	})
 	return out
 }

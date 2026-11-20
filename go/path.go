@@ -2,6 +2,7 @@ package rights
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf16"
@@ -116,4 +117,10 @@ func globToRegexp(pattern string) *regexp.Regexp {
 	}
 	b.WriteByte('$')
 	return regexp.MustCompile(b.String())
+}
+
+// compareUTF16 orders strings by UTF-16 code units, as JavaScript's default
+// sort does.
+func compareUTF16(a, b string) int {
+	return slices.Compare(utf16.Encode([]rune(a)), utf16.Encode([]rune(b)))
 }

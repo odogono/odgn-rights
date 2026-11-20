@@ -50,32 +50,38 @@ type Right struct {
 // ErrInvalidWindow when the validity window ends before it starts.
 func NewRight(path string, opts RightOptions) (*Right, error) {
 	p, negated := parsePath(path)
-	r := &Right{
-		path:        p,
-		description: opts.Description,
-		condition:   opts.Condition,
-		priority:    opts.Priority,
-		tags:        make(map[string]struct{}, len(opts.Tags)),
-		validFrom:   opts.ValidFrom,
-		validUntil:  opts.ValidUntil,
-		specificity: specificity(p),
-	}
+	r := newRightAt(p)
+	r.description = opts.Description
+	r.condition = opts.Condition
+	r.priority = opts.Priority
+	r.validFrom = opts.ValidFrom
+	r.validUntil = opts.ValidUntil
 	for _, t := range opts.Tags {
 		r.tags[t] = struct{}{}
 	}
 	if !r.validFrom.IsZero() && !r.validUntil.IsZero() && r.validFrom.After(r.validUntil) {
 		return nil, ErrInvalidWindow
 	}
+	// Apply the given allows before the given denies, as TypeScript does, so a
+	// flag in both ends up on the side of the later operation.
+	if negated {
+		r.setDeny(opts.Allow)
+		r.setAllow(opts.Deny)
+	} else {
+		r.setAllow(opts.Allow)
+		r.setDeny(opts.Deny)
+	}
+	return r, nil
+}
+
+// newRightAt makes an empty Right for an already normalised path, which is
+// never negated.
+func newRightAt(p string) *Right {
+	r := &Right{path: p, tags: map[string]struct{}{}, specificity: specificity(p)}
 	if strings.ContainsAny(p, "*?") {
 		r.re = globToRegexp(p)
 	}
-	allow, deny := opts.Allow, opts.Deny
-	if negated {
-		allow, deny = deny, allow
-	}
-	r.setAllow(allow)
-	r.setDeny(deny)
-	return r, nil
+	return r
 }
 
 // MustRight is like NewRight but panics on error. It suits rights written in
@@ -192,7 +198,7 @@ func (r *Right) Tags() []string {
 	for t := range r.tags {
 		out = append(out, t)
 	}
-	slices.Sort(out)
+	slices.SortFunc(out, compareUTF16)
 	return out
 }
 

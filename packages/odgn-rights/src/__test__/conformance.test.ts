@@ -3,6 +3,8 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'bun:test';
 
 import {
+  ALL_BITS,
+  Flags,
   Right,
   Rights,
   RoleRegistry,
@@ -77,16 +79,25 @@ const CONDITIONS: Record<string, Condition> = {
     (ctx as Ctx)?.userId === (ctx as Ctx)?.ownerId
 };
 
-const flagsFromLetters = (letters: string): number => {
+const LETTERS: Record<string, Flags> = {
+  c: Flags.CREATE,
+  d: Flags.DELETE,
+  r: Flags.READ,
+  w: Flags.WRITE,
+  x: Flags.EXECUTE
+};
+
+// A check may combine flags, which the Flags type does not list, so the mask
+// is cast back to it.
+const flagsFromLetters = (letters: string): Flags => {
   if (letters === '*') {
-    return 31;
+    return Flags.ALL;
   }
-  const bits: Record<string, number> = { c: 8, d: 4, r: 1, w: 2, x: 16 };
   let mask = 0;
   for (const ch of letters) {
-    mask |= bits[ch] ?? 0;
+    mask |= LETTERS[ch] ?? 0;
   }
-  return mask;
+  return mask as Flags;
 };
 
 // Right's constructor takes the condition, so rebuild an indexed right with it.
@@ -99,12 +110,12 @@ const withCondition = (right: Right, condition: Condition): Right => {
     validFrom: right.validFrom,
     validUntil: right.validUntil
   });
-  for (const bit of [1, 2, 4, 8, 16]) {
+  for (const bit of ALL_BITS) {
     if (right.allowMaskValue & bit) {
-      copy.allow(bit as never);
+      copy.allow(bit);
     }
     if (right.denyMaskValue & bit) {
-      copy.deny(bit as never);
+      copy.deny(bit);
     }
   }
   return copy;
@@ -114,6 +125,11 @@ type Checker = { has: Rights['has'] };
 
 const buildChecker = (c: Extract<Case, { kind: 'check' }>): Checker => {
   if (c.subject) {
+    if (c.conditions) {
+      throw new Error(
+        'conditions apply only to rights or rightsJSON, not to a subject'
+      );
+    }
     const registry = RoleRegistry.fromJSON(c.roles ?? []);
     return Subject.fromJSON(c.subject, registry);
   }
@@ -138,7 +154,7 @@ const runCase = (c: Case) => {
           : check.context;
         const got = checker.has(
           check.path,
-          flagsFromLetters(check.flags) as never,
+          flagsFromLetters(check.flags),
           context
         );
         expect({ ...check, got }).toEqual({ ...check, got: check.expect });

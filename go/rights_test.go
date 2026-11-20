@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"sync"
 	"testing"
@@ -223,5 +224,39 @@ func TestTimeWithoutOffsetIsLocal(t *testing.T) {
 		if _, ok := parseTime(bad); ok {
 			t.Errorf("parseTime(%q) should fail", bad)
 		}
+	}
+}
+
+func TestNegatedPathKeepsOperationOrder(t *testing.T) {
+	// The allows are applied (as denies) before the denies (as allows), so a
+	// flag in both ends up allowed, as in TypeScript.
+	r := MustRight("!/a", RightOptions{Allow: Read | Write, Deny: Read})
+	if r.Allowed() != Read || r.Denied() != Write {
+		t.Errorf("allowed %q, denied %q", r.Allowed(), r.Denied())
+	}
+	r = MustRight("/a", RightOptions{Allow: Read | Write, Deny: Read})
+	if r.Allowed() != Write || r.Denied() != Read {
+		t.Errorf("allowed %q, denied %q", r.Allowed(), r.Denied())
+	}
+}
+
+func TestExtremePrioritiesDoNotOverflow(t *testing.T) {
+	rs := NewRights(
+		MustRight("/a", RightOptions{Deny: Read, Priority: math.MinInt}),
+		MustRight("/a", RightOptions{Allow: Read, Priority: math.MaxInt}),
+	)
+	if !rs.Read("/a") {
+		t.Error("the highest priority should win")
+	}
+}
+
+func TestTimeComponentsOutOfRange(t *testing.T) {
+	for _, bad := range []string{"2025-01-01T24:01:00Z", "2025-01-01T10:00:00+02:60", "2025-01-01T10:00:00+24:00"} {
+		if _, ok := parseTime(bad); ok {
+			t.Errorf("parseTime(%q) should fail", bad)
+		}
+	}
+	if got, ok := parseTime("2025-01-01T24:00:00Z"); !ok || !got.Equal(time.Date(2025, 1, 2, 0, 0, 0, 0, time.UTC)) {
+		t.Errorf("24:00 should be the next midnight, got %v %v", got, ok)
 	}
 }
