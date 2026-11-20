@@ -21,7 +21,7 @@ export class Subject {
   private _roleVersions: number[] = [];
 
   constructor() {
-    this.rights.onChange = () => this.invalidateCache();
+    this.rights.addChangeListener(() => this.invalidateCache());
   }
 
   toJSON(): SubjectJSON {

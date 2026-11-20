@@ -18,7 +18,7 @@ export class Role {
   constructor(name: string, rights?: Rights) {
     this.name = name;
     this.rights = rights ?? new Rights();
-    this.rights.onChange = () => this.invalidateCache();
+    this.rights.addChangeListener(() => this.invalidateCache());
   }
 
   /**

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 
-import { Flags, Right, Role, RoleRegistry, Subject } from '../index';
+import { Flags, Right, Rights, Role, RoleRegistry, Subject } from '../index';
 
 // A subject caches the combined rights of its roles and its direct rights.
 // Each check must still see the current state, without invalidateCache().
@@ -21,6 +21,31 @@ describe('Subject sees changes made after a check', () => {
     expect(s.has('/doc', Flags.READ)).toBe(true);
     role.rights.remove(right);
     expect(s.has('/doc', Flags.READ)).toBe(false);
+  });
+
+  it('sees a change to Rights shared by several roles', () => {
+    const rights = Rights.parse('+r:/doc');
+    const a = new Role('a', rights);
+    const b = new Role('b', rights);
+    const sa = new Subject().memberOf(a);
+    const sb = new Subject().memberOf(b);
+    expect(sa.has('/doc', Flags.READ)).toBe(true);
+    expect(sb.has('/doc', Flags.READ)).toBe(true);
+    rights.remove(rights.allRights()[0]!);
+    expect(sa.has('/doc', Flags.READ)).toBe(false);
+    expect(sb.has('/doc', Flags.READ)).toBe(false);
+  });
+
+  it('still calls an onChange callback set on shared Rights', () => {
+    const rights = new Rights();
+    const role = new Role('a', rights);
+    let calls = 0;
+    rights.onChange = () => calls++;
+    const s = new Subject().memberOf(role);
+    expect(s.has('/doc', Flags.READ)).toBe(false);
+    rights.add(Right.parse('+r:/doc'));
+    expect(calls).toBe(1);
+    expect(s.has('/doc', Flags.READ)).toBe(true);
   });
 
   it('sees its role start and stop inheriting from another', () => {

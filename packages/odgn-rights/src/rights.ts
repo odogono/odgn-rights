@@ -18,13 +18,27 @@ export class Rights {
   private list: Right[] = [];
   private matchCache = new Map<string, Right[]>();
   private _onChange?: () => void;
+  // Roles and subjects that own this collection; several may share it.
+  private listeners = new Set<() => void>();
   private _sealed = false;
 
   set onChange(cb: () => void | undefined) {
     this._onChange = cb;
   }
 
+  /**
+   * Call listener after every change to this collection, alongside any
+   * onChange callback. Returns a function that removes it.
+   */
+  addChangeListener(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
   private notify() {
+    for (const listener of this.listeners) {
+      listener();
+    }
     this._onChange?.();
   }
 
